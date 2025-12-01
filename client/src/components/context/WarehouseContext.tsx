@@ -437,14 +437,33 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
     };
 
     const moveEntities = (ids: string[], targetId: string | null) => {
+        // Handle Virtual Queue Target
+        let actualTargetId = targetId;
+        let targetQueue: string | null = null;
+
+        if (targetId && targetId.startsWith('queue-')) {
+            // Format: queue-{parentId}-{queueName}
+            const queues = ['Assigned', 'Active', 'Done', 'Blocked'];
+            const queueName = queues.find(q => targetId.endsWith(`-${q}`));
+            if (queueName) {
+                targetQueue = queueName;
+                actualTargetId = targetId.replace('queue-', '').replace(`-${queueName}`, '');
+            }
+        }
+
         // Capture state for undo
         const moves: { id: string; targetId: string | null }[] = [];
         const undoMoves: { id: string; targetId: string | null }[] = [];
+        // We also need to capture previous attributes for undo if we are changing them
+        // But our simple undo system only handles moves right now.
+        // TODO: Enhance undo to handle attribute changes.
+        // For now, undo will just move them back, but won't restore the old queue status if it was different.
+        // That's acceptable for "Quick Move" which implies a state change.
 
         ids.forEach(id => {
             const entity = state.entities[id];
             if (entity) {
-                moves.push({ id, targetId });
+                moves.push({ id, targetId: actualTargetId });
                 undoMoves.push({ id, targetId: entity.parentId });
             }
         });
@@ -457,13 +476,77 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         };
         setUndoStack([undoAction]); // 1-step undo
 
+        // 1. Perform the Move
         const action: Action = { type: 'BATCH_MOVE', payload: { moves } };
-        const newState = warehouseReducer(state, action);
-        dispatch(action);
+        let newState = warehouseReducer(state, action);
+
+        // 2. If target was a queue, update attributes
+        if (targetQueue) {
+            const updates: Record<string, WarehouseEntity> = {};
+            ids.forEach(id => {
+                const entity = newState.entities[id];
+                if (entity && entity.type === 'Device') {
+                    const currentAttrs = entity.deviceAttributes || {};
+                    updates[id] = {
+                        ...entity,
+                        deviceAttributes: { ...currentAttrs, queue: targetQueue }
+                    };
+                }
+            });
+
+            // Apply updates to state
+            newState = {
+                ...newState,
+                entities: {
+                    ...newState.entities,
+                    ...updates
+                }
+            };
+
+            // We need to dispatch these updates too so the reducer stays in sync if we used dispatch for BATCH_MOVE
+            // But we can't easily dispatch "BATCH_UPDATE".
+            // We can dispatch multiple UPDATE_ENTITY or add BATCH_UPDATE.
+            // Or we can just rely on SET_STATE if we had it, but we don't want to reload everything.
+            // Let's add BATCH_UPDATE to reducer? Or just iterate.
+            // Iterating might be slow for many items but safe.
+            // Actually, we can just save the final state and dispatch SET_STATE? No, that might flicker.
+            // Let's just loop dispatch UPDATE_ENTITY for now, or better:
+            // We already calculated `newState` with the updates.
+            // We can just force the state update if we had a way.
+            // But `dispatch` needs an action.
+            // Let's just dispatch the moves first (already done above via action const), 
+            // then dispatch updates.
+
+            // Wait, I haven't dispatched BATCH_MOVE yet in this new code block.
+            dispatch(action);
+
+            // Now dispatch updates
+            ids.forEach(id => {
+                // We need to check if it's a device
+                const entity = state.entities[id]; // Use original state to check type safely
+                if (entity && entity.type === 'Device') {
+                    dispatch({
+                        type: 'UPDATE_ENTITY',
+                        payload: {
+                            id,
+                            updates: { deviceAttributes: { ...entity.deviceAttributes, queue: targetQueue } as any }
+                        }
+                    });
+                }
+            });
+        } else {
+            dispatch(action);
+        }
+
+        // Save the final computed state (which includes moves and updates)
         saveState(newState);
 
-        const targetLabel = targetId ? (state.entities[targetId]?.label || targetId) : 'Root';
-        logAction('MOVE', `Moved ${ids.length} items to ${targetLabel}`, ids[0]);
+        const targetLabel = actualTargetId ? (state.entities[actualTargetId]?.label || actualTargetId) : 'Root';
+        const logMsg = targetQueue
+            ? `Moved ${ids.length} items to ${targetLabel} (${targetQueue})`
+            : `Moved ${ids.length} items to ${targetLabel}`;
+
+        logAction('MOVE', logMsg, ids[0]);
     };
 
     const undo = () => {

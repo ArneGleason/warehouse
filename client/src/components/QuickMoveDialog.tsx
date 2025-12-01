@@ -8,6 +8,13 @@ import { Search, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as Icons from 'lucide-react';
 
+const QUEUE_COLORS: Record<string, string> = {
+    'Assigned': '#2F50AC',
+    'Active': '#DBA200',
+    'Done': '#5A8B30',
+    'Blocked': '#F57C00'
+};
+
 interface QuickMoveDialogProps {
     isOpen: boolean;
     onClose: () => void;
@@ -143,6 +150,47 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
 
         if (searchTerm && !matchesSearchRecursive(entityId)) return null;
 
+        // Virtual Queues for Workstations
+        const isWorkstation = entity.type === 'Workstation';
+        const queues = ['Assigned', 'Active', 'Done', 'Blocked'];
+        const showQueues = isWorkstation && (isExpanded || searchTerm !== ''); // Show queues if expanded or searching (maybe?)
+        // Actually, if searching, we only show if queue name matches? 
+        // Or if we want to allow moving to queue, we should show them.
+
+        // Helper to render a queue node
+        const QueueNode = ({ queueName }: { queueName: string }) => {
+            const virtualId = `queue-${entityId}-${queueName}`;
+            const isQueueSelected = targetId === virtualId;
+
+            // Valid if parent is valid (Workstation is a valid container)
+            // If Workstation is valid target, then its queues are valid targets too?
+            // Yes, usually.
+            const isQueueValid = valid;
+
+            return (
+                <div
+                    className={cn(
+                        "flex items-center py-1 px-2 cursor-pointer rounded-sm hover:bg-accent/50",
+                        isQueueSelected && "bg-accent text-accent-foreground",
+                        !isQueueValid && "opacity-50 cursor-not-allowed"
+                    )}
+                    style={{ paddingLeft: `${(level + 1) * 12 + 4}px` }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (isQueueValid) setTargetId(virtualId);
+                    }}
+                >
+                    <div className="mr-1 p-0.5 w-4 h-4" /> {/* Spacer for expander */}
+                    <Icons.ListTodo
+                        className="h-4 w-4 mr-2"
+                        style={{ color: QUEUE_COLORS[queueName] }}
+                    />
+                    <span className="text-sm truncate flex-1">{queueName}</span>
+                    {isQueueSelected && <Check className="h-4 w-4 ml-auto" />}
+                </div>
+            );
+        };
+
         return (
             <div>
                 <div
@@ -169,9 +217,12 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
                     <span className="text-sm truncate flex-1">{entity.label}</span>
                     {isSelected && <Check className="h-4 w-4 ml-auto" />}
                 </div>
-                {isExpanded && hasChildren && (
+                {isExpanded && (
                     <div>
-                        {entity.children.map(childId => (
+                        {isWorkstation && queues.map(q => (
+                            <QueueNode key={q} queueName={q} />
+                        ))}
+                        {hasChildren && entity.children.map(childId => (
                             <TreeNode key={childId} entityId={childId} level={level + 1} />
                         ))}
                     </div>
