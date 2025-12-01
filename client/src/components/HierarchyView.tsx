@@ -785,6 +785,11 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                                             <Move className="h-4 w-4 mr-2" /> {entity.type === 'Device' ? 'Quick Move' : 'Quick Move Contents'}
                                         </DropdownMenuItem>
                                     )}
+                                    {entity.type === 'Bin' && (
+                                        <DropdownMenuItem onClick={() => onImport(entityId)}>
+                                            <Upload className="h-4 w-4 mr-2" /> Import Devices
+                                        </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem onClick={() => onDelete(entityId)}>
                                         <Trash2 className="h-4 w-4 mr-2" /> Delete
                                     </DropdownMenuItem>
