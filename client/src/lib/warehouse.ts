@@ -102,5 +102,5 @@ export function generateDeviceLabel(attrs: DeviceAttributes): string {
         attrs.imei
     ].filter(Boolean); // Filter out undefined/null/empty strings
 
-    return parts.length > 0 ? parts.join(' - ') : 'New Device';
+    return parts.length > 0 ? parts.join(' • ') : 'New Device';
 }
