@@ -178,6 +178,13 @@ interface VirtualQueueNodeProps {
     onDelete: (ids: Set<string>) => void;
 }
 
+const QUEUE_COLORS: Record<string, string> = {
+    'Assigned': '#2F50AC',
+    'Active': '#DBA200',
+    'Done': '#5A8B30',
+    'Blocked': '#F57C00'
+};
+
 const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
     queueName,
     parentId,
@@ -285,7 +292,10 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
                     {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </div>
 
-                <Icons.ListTodo className="h-4 w-4 mr-2 text-orange-500" />
+                <Icons.ListTodo
+                    className="h-4 w-4 mr-2"
+                    style={{ color: QUEUE_COLORS[queueName] || '#F97316' }}
+                />
                 <span className="text-sm truncate flex-1 font-medium">{queueName}</span>
 
                 <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
