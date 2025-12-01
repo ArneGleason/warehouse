@@ -45,8 +45,29 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
 
     if (selectedIds.size === 0) {
         return (
-            <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                Select an item to view properties
+            <div className="h-full p-4 border-l bg-background flex flex-col">
+                <div className="flex items-center gap-2 mb-6 opacity-50">
+                    <div className="p-2 bg-muted rounded-md">
+                        <Icons.Box className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <h2 className="font-semibold text-lg">No Selection</h2>
+                        <p className="text-xs text-muted-foreground">Select an item to view properties</p>
+                    </div>
+                </div>
+
+                <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm italic">
+                    No item selected
+                </div>
+
+                <div className="pt-6 border-t mt-6 space-y-2">
+                    <Button variant="default" className="w-full" disabled>
+                        <Move className="h-4 w-4 mr-2" /> Quick Move
+                    </Button>
+                    <Button variant="outline" className="w-full" disabled>
+                        <Trash2 className="h-4 w-4 mr-2" /> Delete
+                    </Button>
+                </div>
             </div>
         );
     }
@@ -109,7 +130,7 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
                         <Button variant="default" className="flex-1" onClick={() => setQuickMoveOpen(true)}>
                             <Move className="h-4 w-4 mr-2" /> Quick Move
                         </Button>
-                        <Button variant="destructive" className="flex-1" onClick={() => setDeleteDialogOpen(true)}>
+                        <Button variant="outline" className="flex-1" onClick={() => setDeleteDialogOpen(true)}>
                             <Trash2 className="h-4 w-4 mr-2" /> Delete All
                         </Button>
                     </div>
@@ -352,7 +373,7 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
                     <Button variant="default" className="w-full" onClick={() => setQuickMoveOpen(true)}>
                         <Move className="h-4 w-4 mr-2" /> Quick Move
                     </Button>
-                    <Button variant="destructive" className="w-full" onClick={() => setDeleteDialogOpen(true)}>
+                    <Button variant="outline" className="w-full" onClick={() => setDeleteDialogOpen(true)}>
                         <Trash2 className="h-4 w-4 mr-2" /> Delete {entity.type}
                     </Button>
                 </div>
