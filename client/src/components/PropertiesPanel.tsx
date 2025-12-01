@@ -106,11 +106,11 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
 
                 <div className="space-y-6 flex-1 overflow-auto">
                     <div className="flex gap-2">
+                        <Button variant="default" className="flex-1" onClick={() => setQuickMoveOpen(true)}>
+                            <Move className="h-4 w-4 mr-2" /> Quick Move
+                        </Button>
                         <Button variant="destructive" className="flex-1" onClick={() => setDeleteDialogOpen(true)}>
                             <Trash2 className="h-4 w-4 mr-2" /> Delete All
-                        </Button>
-                        <Button variant="outline" className="flex-1" onClick={() => setQuickMoveOpen(true)}>
-                            <Move className="h-4 w-4 mr-2" /> Quick Move
                         </Button>
                     </div>
 
@@ -349,7 +349,7 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
                 </div>
 
                 <div className="pt-6 border-t mt-6 space-y-2">
-                    <Button variant="outline" className="w-full" onClick={() => setQuickMoveOpen(true)}>
+                    <Button variant="default" className="w-full" onClick={() => setQuickMoveOpen(true)}>
                         <Move className="h-4 w-4 mr-2" /> Quick Move
                     </Button>
                     <Button variant="destructive" className="w-full" onClick={() => setDeleteDialogOpen(true)}>

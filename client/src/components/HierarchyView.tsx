@@ -116,11 +116,11 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => onDelete(new Set(deviceIds))}>
-                                        <Trash2 className="h-4 w-4 mr-2" /> Delete Group
-                                    </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => onQuickMove(new Set(deviceIds))}>
                                         <Move className="h-4 w-4 mr-2" /> Quick Move Group
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => onDelete(new Set(deviceIds))}>
+                                        <Trash2 className="h-4 w-4 mr-2" /> Delete Group
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
@@ -128,11 +128,11 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                     </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
-                    <ContextMenuItem onClick={() => onDelete(new Set(deviceIds))}>
-                        <Trash2 className="h-4 w-4 mr-2" /> Delete Group
-                    </ContextMenuItem>
                     <ContextMenuItem onClick={() => onQuickMove(new Set(deviceIds))}>
                         <Move className="h-4 w-4 mr-2" /> Quick Move Group
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => onDelete(new Set(deviceIds))}>
+                        <Trash2 className="h-4 w-4 mr-2" /> Delete Group
                     </ContextMenuItem>
                 </ContextMenuContent>
             </ContextMenu>
@@ -780,19 +780,14 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => onDelete(entityId)}>
-                                        <Trash2 className="h-4 w-4 mr-2" /> Delete
-                                    </DropdownMenuItem>
-                                    {entity.type === 'Bin' && (
-                                        <DropdownMenuItem onClick={() => onImport(entityId)}>
-                                            <Upload className="h-4 w-4 mr-2" /> Import Devices
-                                        </DropdownMenuItem>
-                                    )}
                                     {(entity.type === 'Bin' || entity.type === 'Workstation' || entity.type === 'Device') && (
                                         <DropdownMenuItem onClick={() => onQuickMove(entityId)}>
                                             <Move className="h-4 w-4 mr-2" /> {entity.type === 'Device' ? 'Quick Move' : 'Quick Move Contents'}
                                         </DropdownMenuItem>
                                     )}
+                                    <DropdownMenuItem onClick={() => onDelete(entityId)}>
+                                        <Trash2 className="h-4 w-4 mr-2" /> Delete
+                                    </DropdownMenuItem>
                                     <DropdownMenuSub>
                                         <DropdownMenuSubTrigger>Add Child</DropdownMenuSubTrigger>
                                         <DropdownMenuSubContent>
