@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { useWarehouse } from '@/components/context/WarehouseContext';
 import { ENTITY_CONFIG, WarehouseEntity } from '@/lib/warehouse';
 import { Search, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import * as Icons from 'lucide-react';
 
@@ -106,6 +107,14 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
         setExpandedIds(newExpanded);
     };
 
+    // Helper to count descendant devices
+    const getDeviceCount = (entityId: string): number => {
+        const entity = state.entities[entityId];
+        if (!entity) return 0;
+        if (entity.type === 'Device') return 1;
+        return entity.children.reduce((acc, childId) => acc + getDeviceCount(childId), 0);
+    };
+
     // Recursive Tree Node
     const TreeNode = ({ entityId, level }: { entityId: string, level: number }) => {
         const entity = state.entities[entityId];
@@ -167,6 +176,12 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
             // Yes, usually.
             const isQueueValid = valid;
 
+            // Count devices in this queue
+            const queueDeviceCount = entity.children
+                .map(id => state.entities[id])
+                .filter(e => e?.type === 'Device' && e.deviceAttributes?.queue === queueName)
+                .length;
+
             return (
                 <div
                     className={cn(
@@ -186,10 +201,17 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
                         style={{ color: QUEUE_COLORS[queueName] }}
                     />
                     <span className="text-sm truncate flex-1">{queueName}</span>
+                    {queueDeviceCount > 0 && (
+                        <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
+                            {queueDeviceCount}
+                        </Badge>
+                    )}
                     {isQueueSelected && <Check className="h-4 w-4 ml-auto" />}
                 </div>
             );
         };
+
+        const deviceCount = getDeviceCount(entityId);
 
         return (
             <div>
@@ -215,6 +237,11 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
                     </div>
                     <Icon className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span className="text-sm truncate flex-1">{entity.label}</span>
+                    {deviceCount > 0 && (
+                        <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
+                            {deviceCount}
+                        </Badge>
+                    )}
                     {isSelected && <Check className="h-4 w-4 ml-auto" />}
                 </div>
                 {isExpanded && (
@@ -222,9 +249,11 @@ export function QuickMoveDialog({ isOpen, onClose, selectedIds, onMove }: QuickM
                         {isWorkstation && queues.map(q => (
                             <QueueNode key={q} queueName={q} />
                         ))}
-                        {hasChildren && entity.children.map(childId => (
-                            <TreeNode key={childId} entityId={childId} level={level + 1} />
-                        ))}
+                        {hasChildren && entity.children
+                            .filter(childId => state.entities[childId]?.type !== 'Device') // Hide devices
+                            .map(childId => (
+                                <TreeNode key={childId} entityId={childId} level={level + 1} />
+                            ))}
                     </div>
                 )}
             </div>
