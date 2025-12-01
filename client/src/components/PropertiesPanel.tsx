@@ -170,7 +170,130 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
         );
     }
 
-    const entity = state.entities[Array.from(selectedIds)[0]];
+    const firstSelectedId = Array.from(selectedIds)[0];
+
+    // Handle Virtual Queue Selection
+    if (firstSelectedId.startsWith('queue-')) {
+        const parts = firstSelectedId.split('-');
+        // Format: queue-{parentId}-{queueName}
+        // But parentId is a UUID, which contains dashes.
+        // Queue name is at the end.
+        // Let's assume queue name doesn't have dashes for now, or we parse carefully.
+        // Actually, UUID has 4 dashes.
+        // queue-UUID-QueueName
+        // queue-123e4567-e89b-12d3-a456-426614174000-Assigned
+        // So we can split by '-' and take the last part as queueName, and the middle parts as UUID.
+        // Or better: we know the UUID length? No.
+        // Let's rely on the fact that queue names are fixed: Assigned, Active, Done, Blocked.
+        // We can check if string ends with one of them.
+        const queues = ['Assigned', 'Active', 'Done', 'Blocked'];
+        const queueName = queues.find(q => firstSelectedId.endsWith(`-${q}`));
+
+        if (queueName) {
+            const parentId = firstSelectedId.replace('queue-', '').replace(`-${queueName}`, '');
+            const parentEntity = state.entities[parentId];
+
+            if (parentEntity) {
+                // Get devices in this queue
+                const deviceChildren = parentEntity.children
+                    .map(id => state.entities[id])
+                    .filter(e => e?.type === 'Device' && e.deviceAttributes?.queue === queueName);
+
+                const count = deviceChildren.length;
+
+                // Aggregate SKUs for the queue view
+                const skuCounts: Record<string, number> = {};
+                deviceChildren.forEach(e => {
+                    if (e.deviceAttributes?.sku) {
+                        const sku = e.deviceAttributes.sku;
+                        skuCounts[sku] = (skuCounts[sku] || 0) + 1;
+                    }
+                });
+
+                return (
+                    <div className="h-full p-4 border-l bg-background flex flex-col">
+                        <div className="flex items-center gap-2 mb-6">
+                            <div className="p-2 bg-muted rounded-md">
+                                <Icons.ListTodo className="h-6 w-6 text-orange-500" />
+                            </div>
+                            <div>
+                                <h2 className="font-semibold text-lg">{queueName} Queue</h2>
+                                <p className="text-xs text-muted-foreground">
+                                    In: {parentEntity.label}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6 flex-1 overflow-auto">
+                            <div className="flex gap-2">
+                                <Button variant="default" className="flex-1" onClick={() => {
+                                    // Select all devices in queue for quick move
+                                    const ids = new Set(deviceChildren.map(d => d.id));
+                                    // We need to pass these IDs to QuickMoveDialog.
+                                    // But QuickMoveDialog takes `selectedIds`.
+                                    // We can temporarily override selectedIds or just pass them?
+                                    // QuickMoveDialog takes `selectedIds` prop.
+                                    // We can't easily change the prop passed to PropertiesPanel.
+                                    // But we can use a local state or just invoke the move directly if we had a way.
+                                    // Actually, QuickMoveDialog uses the passed `selectedIds`.
+                                    // Workaround: We can't easily use the shared QuickMoveDialog for a subset of IDs 
+                                    // unless we change selection.
+                                    // OR we can make QuickMoveDialog accept explicit IDs override.
+                                    // Let's assume for now we select them? No, that changes view.
+                                    // Let's just use the current selection (which is the queue node) 
+                                    // and handle "Queue Node" in QuickMoveDialog?
+                                    // Or better: The `handleQuickMoveConfirm` uses `selectedIds`.
+                                    // If we select the queue node, `moveEntities` needs to handle it.
+                                    // `moveEntities` in context probably doesn't handle virtual IDs.
+                                    // So we should resolve IDs here.
+
+                                    // Let's pass the device IDs to a new QuickMoveDialog instance or 
+                                    // modify the existing one to accept `idsToMove`.
+                                    // For now, let's just show the dialog and hack the handleConfirm?
+                                    // No, `QuickMoveDialog` takes `selectedIds`.
+                                    // We should probably update `QuickMoveDialog` to accept `initialSelection` or similar.
+                                    // OR, simpler: When "Quick Move" is clicked here, we open the dialog, 
+                                    // but we need to tell it WHAT to move.
+                                    // Let's update `QuickMoveDialog` usage in this specific block.
+                                    setQuickMoveOpen(true);
+                                }}>
+                                    <Move className="h-4 w-4 mr-2" /> Quick Move Contents
+                                </Button>
+                            </div>
+
+                            <div>
+                                <h3 className="font-medium text-sm mb-2">Devices in Queue ({count})</h3>
+                                <div className="space-y-2">
+                                    {Object.entries(skuCounts).map(([sku, count]) => (
+                                        <div key={sku} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded">
+                                            <span className="font-mono">{sku}</span>
+                                            {count > 1 && <Badge variant="secondary">x{count}</Badge>}
+                                        </div>
+                                    ))}
+                                    {Object.keys(skuCounts).length === 0 && (
+                                        <div className="text-xs text-muted-foreground italic">No SKUs found</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <QuickMoveDialog
+                            isOpen={quickMoveOpen}
+                            onClose={() => setQuickMoveOpen(false)}
+                            selectedIds={new Set(deviceChildren.map(d => d.id))}
+                            onMove={(targetId) => {
+                                moveEntities(deviceChildren.map(d => d.id), targetId);
+                                setQuickMoveOpen(false);
+                                toast.success(`Moved ${count} items`);
+                            }}
+                        />
+                    </div>
+                );
+            }
+        }
+    }
+
+    const entity = state.entities[firstSelectedId];
     if (!entity) return null;
 
     const Icon = (Icons as any)[ENTITY_CONFIG[entity.type].icon] || Icons.Box;

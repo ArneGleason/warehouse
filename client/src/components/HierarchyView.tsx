@@ -202,6 +202,12 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
     const { updateEntity, moveEntity } = useWarehouse();
     const virtualId = `queue-${parentId}-${queueName}`;
     const isExpanded = expandedIds.has(virtualId);
+    const isSelected = selectedIds.has(virtualId);
+
+    const handleSelect = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onSelect(new Set([virtualId]), e);
+    };
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
@@ -280,30 +286,58 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
             onDrop={handleSafeDrop}
             onDragOver={handleDragOver}
         >
-            <div
-                className={cn(
-                    "flex items-center py-1 px-2 hover:bg-accent/50 cursor-pointer rounded-sm group",
-                )}
-                style={{ paddingLeft: `${level * 12 + 4}px` }}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    toggleExpansion(virtualId);
-                }}
-            >
-                <div className="mr-1 p-0.5 hover:bg-muted rounded">
-                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                </div>
+            <ContextMenu>
+                <ContextMenuTrigger>
+                    <div
+                        className={cn(
+                            "flex items-center py-1 px-2 hover:bg-accent/50 cursor-pointer rounded-sm group",
+                            isSelected && "bg-accent text-accent-foreground"
+                        )}
+                        style={{ paddingLeft: `${level * 12 + 4}px` }}
+                        onClick={handleSelect}
+                    >
+                        <div
+                            className="mr-1 p-0.5 hover:bg-muted rounded"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpansion(virtualId);
+                            }}
+                        >
+                            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </div>
 
-                <Icons.ListTodo
-                    className="h-4 w-4 mr-2"
-                    style={{ color: QUEUE_COLORS[queueName] || '#F97316' }}
-                />
-                <span className="text-sm truncate flex-1 font-medium">{queueName}</span>
+                        <Icons.ListTodo
+                            className="h-4 w-4 mr-2"
+                            style={{ color: QUEUE_COLORS[queueName] || '#F97316' }}
+                        />
+                        <span className="text-sm truncate flex-1 font-medium">{queueName}</span>
 
-                <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
-                    {deviceIds.length}
-                </Badge>
-            </div>
+                        <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
+                            {deviceIds.length}
+                        </Badge>
+
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity ml-2" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => onQuickMove(new Set(deviceIds))}>
+                                        <Move className="h-4 w-4 mr-2" /> Quick Move Contents
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem onClick={() => onQuickMove(new Set(deviceIds))}>
+                        <Move className="h-4 w-4 mr-2" /> Quick Move Contents
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
 
             {isExpanded && (
                 <div>
