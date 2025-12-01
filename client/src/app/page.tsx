@@ -23,7 +23,7 @@ export default function Home() {
 
         <div className="flex-1 overflow-hidden">
           <ResizablePanelGroup direction="horizontal">
-            <ResizablePanel defaultSize={25} minSize={15}>
+            <ResizablePanel defaultSize={30} minSize={20}>
               <HierarchyView
                 onSelect={setSelectedIds}
                 selectedIds={selectedIds}
@@ -34,18 +34,7 @@ export default function Home() {
 
             <ResizableHandle />
 
-            <ResizablePanel defaultSize={75}>
-              <div className="h-full bg-muted/20">
-                {/* Center canvas area - for now just a placeholder or visualizer */}
-                <div className="h-full flex items-center justify-center text-muted-foreground">
-                  Visual Layout (Coming Soon)
-                </div>
-              </div>
-            </ResizablePanel>
-
-            <ResizableHandle />
-
-            <ResizablePanel defaultSize={25} minSize={20}>
+            <ResizablePanel defaultSize={70} minSize={30}>
               <PropertiesPanel selectedIds={selectedIds} grouping={grouping} />
             </ResizablePanel>
           </ResizablePanelGroup>
