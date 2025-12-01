@@ -176,6 +176,7 @@ interface VirtualQueueNodeProps {
     toggleExpansion: (id: string) => void;
     onQuickMove: (ids: Set<string>) => void;
     onDelete: (ids: Set<string>) => void;
+    grouping: 'none' | 'po' | 'sku';
 }
 
 const QUEUE_COLORS: Record<string, string> = {
@@ -195,7 +196,8 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
     expandedIds,
     toggleExpansion,
     onQuickMove,
-    onDelete
+    onDelete,
+    grouping
 }) => {
     const { updateEntity, moveEntity } = useWarehouse();
     const virtualId = `queue-${parentId}-${queueName}`;
@@ -305,25 +307,58 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
 
             {isExpanded && (
                 <div>
-                    {deviceIds.map(childId => (
-                        <HierarchyNode
-                            key={childId}
-                            entityId={childId}
-                            level={level + 1}
-                            onSelect={(idOrIds, e) => {
-                                const ids = typeof idOrIds === 'string' ? new Set([idOrIds]) : idOrIds;
-                                onSelect(ids, e);
-                            }}
-                            selectedIds={selectedIds}
-                            searchTerm=""
-                            onImport={() => { }}
-                            onDelete={(id) => onDelete(new Set([id]))}
-                            expandedIds={expandedIds}
-                            toggleExpansion={toggleExpansion}
-                            onQuickMove={(id) => onQuickMove(new Set([id]))}
-                            grouping="none"
-                        />
-                    ))}
+                    {grouping === 'none' ? (
+                        deviceIds.map(childId => (
+                            <HierarchyNode
+                                key={childId}
+                                entityId={childId}
+                                level={level + 1}
+                                onSelect={(idOrIds, e) => {
+                                    const ids = typeof idOrIds === 'string' ? new Set([idOrIds]) : idOrIds;
+                                    onSelect(ids, e);
+                                }}
+                                selectedIds={selectedIds}
+                                searchTerm=""
+                                onImport={() => { }}
+                                onDelete={(id) => onDelete(new Set([id]))}
+                                expandedIds={expandedIds}
+                                toggleExpansion={toggleExpansion}
+                                onQuickMove={(id) => onQuickMove(new Set([id]))}
+                                grouping="none"
+                            />
+                        ))
+                    ) : (
+                        (() => {
+                            const groups: Record<string, string[]> = {};
+                            deviceIds.forEach(id => {
+                                const device = state.entities[id];
+                                if (!device) return;
+                                let key = 'Unknown';
+                                if (grouping === 'po') {
+                                    key = device.deviceAttributes?.po_number || 'No PO';
+                                } else if (grouping === 'sku') {
+                                    key = device.deviceAttributes?.sku || 'No SKU';
+                                }
+                                if (!groups[key]) groups[key] = [];
+                                groups[key].push(id);
+                            });
+
+                            return Object.entries(groups).map(([key, ids]) => (
+                                <VirtualGroupNode
+                                    key={key}
+                                    groupKey={key}
+                                    deviceIds={ids}
+                                    level={level + 1}
+                                    onSelect={onSelect}
+                                    selectedIds={selectedIds}
+                                    expandedIds={expandedIds}
+                                    toggleExpansion={toggleExpansion}
+                                    onQuickMove={onQuickMove}
+                                    onDelete={onDelete}
+                                />
+                            ));
+                        })()
+                    )}
                 </div>
             )}
         </div>
@@ -630,6 +665,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             toggleExpansion={toggleExpansion}
                             onQuickMove={(ids) => (onQuickMove as any)(ids)}
                             onDelete={(ids) => (onDelete as any)(ids)}
+                            grouping={grouping}
                         />
                     ))}
                 </div>
