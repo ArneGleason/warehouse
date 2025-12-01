@@ -305,6 +305,166 @@ export function PropertiesPanel({ selectedIds, grouping }: { selectedIds: Set<st
     const entity = state.entities[firstSelectedId];
     if (!entity) return null;
 
+    // Helper to get all descendant devices for a department
+    const getDepartmentInventory = (departmentId: string) => {
+        const inventory: Record<string, {
+            sku: string;
+            description: string;
+            total: number;
+            onHandSellable: number;
+            allocated: number;
+        }> = {};
+
+        const scanRecursive = (id: string) => {
+            const entity = state.entities[id];
+            if (!entity) return;
+
+            if (entity.type === 'Device') {
+                const attrs = entity.deviceAttributes || {};
+                const sku = attrs.sku || 'Unknown SKU';
+
+                if (!inventory[sku]) {
+                    // Construct description
+                    const descriptionParts = [
+                        attrs.manufacturer,
+                        attrs.model,
+                        attrs.capacity_gb ? `${attrs.capacity_gb}GB` : null,
+                        attrs.lock_status,
+                        attrs.grade
+                    ].filter(Boolean);
+
+                    inventory[sku] = {
+                        sku,
+                        description: descriptionParts.join(' ') || 'No Description',
+                        total: 0,
+                        onHandSellable: 0,
+                        allocated: 0
+                    };
+                }
+
+                inventory[sku].total++;
+                if (attrs.sellable) {
+                    inventory[sku].onHandSellable++;
+                }
+                // Allocated logic placeholder
+            }
+
+            entity.children.forEach(scanRecursive);
+        };
+
+        scanRecursive(departmentId);
+        return Object.values(inventory);
+    };
+
+    if (entity.type === 'Department') {
+        const inventoryData = getDepartmentInventory(entity.id);
+        const Icon = (Icons as any)[ENTITY_CONFIG[entity.type].icon] || Icons.Box;
+
+        return (
+            <div className="h-full border-l bg-background flex flex-col">
+                <div className="p-4 border-b">
+                    <div className="flex items-center gap-2 mb-1">
+                        <Icon className="h-5 w-5 text-muted-foreground" />
+                        <h2 className="font-semibold text-lg">{entity.label}</h2>
+                    </div>
+                    <div className="text-xs text-muted-foreground font-mono">{entity.id}</div>
+                </div>
+
+                <Tabs defaultValue="attributes" className="flex-1 flex flex-col overflow-hidden">
+                    <div className="px-4 pt-2">
+                        <TabsList className="w-full">
+                            <TabsTrigger value="attributes" className="flex-1">ATTRIBUTES</TabsTrigger>
+                            <TabsTrigger value="inventory" className="flex-1">INVENTORY</TabsTrigger>
+                        </TabsList>
+                    </div>
+
+                    <TabsContent value="attributes" className="flex-1 p-4 space-y-6 overflow-auto">
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>Label</Label>
+                                <Input
+                                    value={entity.label}
+                                    onChange={(e) => updateEntity(entity.id, { label: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Description</Label>
+                                <Input
+                                    value={entity.description || ''}
+                                    onChange={(e) => updateEntity(entity.id, { description: e.target.value })}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="pt-6 border-t mt-6 space-y-2">
+                            <Button variant="default" className="w-full" onClick={() => setQuickMoveOpen(true)}>
+                                <Move className="h-4 w-4 mr-2" /> Quick Move Contents
+                            </Button>
+                            <Button variant="outline" className="w-full text-destructive hover:bg-destructive/10" onClick={() => setDeleteDialogOpen(true)}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete Department
+                            </Button>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="inventory" className="flex-1 p-0 overflow-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>SKU</TableHead>
+                                    <TableHead>Description</TableHead>
+                                    <TableHead className="text-right">Total</TableHead>
+                                    <TableHead className="text-right">Sellable</TableHead>
+                                    <TableHead className="text-right">Allocated</TableHead>
+                                    <TableHead className="text-right">Available</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {inventoryData.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                            No inventory found in this department
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    inventoryData.map((item) => (
+                                        <TableRow key={item.sku}>
+                                            <TableCell className="font-medium">{item.sku}</TableCell>
+                                            <TableCell>{item.description}</TableCell>
+                                            <TableCell className="text-right">{item.total}</TableCell>
+                                            <TableCell className="text-right">{item.onHandSellable}</TableCell>
+                                            <TableCell className="text-right">{item.allocated}</TableCell>
+                                            <TableCell className="text-right font-bold">
+                                                {item.onHandSellable - item.allocated}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </TabsContent>
+                </Tabs>
+
+                <QuickMoveDialog
+                    isOpen={quickMoveOpen}
+                    onClose={() => setQuickMoveOpen(false)}
+                    selectedIds={new Set(entity.children)}
+                    onMove={(targetId) => {
+                        moveEntities(entity.children, targetId);
+                        setQuickMoveOpen(false);
+                        toast.success(`Moved ${entity.children.length} items`);
+                    }}
+                />
+
+                <DeleteConfirmationDialog
+                    isOpen={deleteDialogOpen}
+                    onClose={() => setDeleteDialogOpen(false)}
+                    onConfirm={handleDelete}
+                    entityName={entity.label}
+                />
+            </div>
+        );
+    }
+
     const Icon = (Icons as any)[ENTITY_CONFIG[entity.type].icon] || Icons.Box;
 
     const getParentPath = (entityId: string) => {
