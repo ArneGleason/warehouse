@@ -375,6 +375,21 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
     // Wrapper functions that dispatch AND save
     const addEntity = (type: any, parentId: string | null = null) => {
         const entity = createEntity(type, parentId);
+
+        // Auto-generate barcode for Bins and Boxes
+        if (type === 'Bin' || type === 'Box') {
+            const existingEntities = Object.values(state.entities).filter(e => e.type === type);
+            const nextNum = existingEntities.length + 1;
+            const prefix = type === 'Bin' ? 'BX' : 'BOX'; // Or maybe just BX for both? User example was BX_001 for Bin. Let's use BOX for Box to distinguish? Or maybe BX for Bin and something else for Box?
+            // User request: "automaticaly create short unique barcode for any new box (e.g. BX_001)" - this was for "box label" but context was "Bin".
+            // Now user says "same thing to happen for Boxes".
+            // If Bin is BX, maybe Box is PKG? or BOX?
+            // Let's use 'BOX' for Box type to avoid collision if they share namespace, or just distinct prefixes.
+            const barcode = `${prefix}_${nextNum.toString().padStart(3, '0')}`;
+            entity.barcode = barcode;
+            entity.label = barcode;
+        }
+
         const action: Action = { type: 'ADD_ENTITY', payload: { entity, parentId } };
         const newState = warehouseReducer(state, action);
         dispatch(action);

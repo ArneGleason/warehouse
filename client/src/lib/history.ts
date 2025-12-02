@@ -16,10 +16,20 @@ class WarehouseHistory extends Dexie {
         this.version(1).stores({
             logs: '++id, timestamp, actionType'
         });
+        this.version(2).stores({
+            logs: '++id, timestamp, actionType, entityId'
+        });
     }
 }
 
 export const db = new WarehouseHistory();
+
+export async function getEntityHistory(entityId: string) {
+    return await db.logs
+        .where('entityId').equals(entityId)
+        .reverse()
+        .sortBy('timestamp');
+}
 
 export async function logAction(actionType: string, details: string, entityId?: string) {
     try {

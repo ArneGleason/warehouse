@@ -1,0 +1,79 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REPO_NAME: warehouse-repo
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate to Google Cloud
+      # Uses Workload Identity Federation or Service Account Key
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      # Setup gcloud CLI
+      - name: 'Set up Cloud SDK'
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      # Configure Docker to use gcloud as a credential helper
+      - name: 'Docker Auth'
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      # Build and Push Server
+      - name: 'Build and Push Server'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/server:${{ github.sha }}
+
+      # Build and Push Client
+      - name: 'Build and Push Client'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          push: true
+          tags: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/client:${{ github.sha }}
+
+      # Deploy Server to Cloud Run
+      - name: 'Deploy Server'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: 'warehouse-server'
+          image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/server:${{ github.sha }}'
+          region: '${{ env.REGION }}'
+          flags: '--allow-unauthenticated --port=3001'
+
+      # Deploy Client to Cloud Run
+      - name: 'Deploy Client'
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: 'warehouse-client'
+          image: '${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/client:${{ github.sha }}'
+          region: '${{ env.REGION }}'
+          flags: '--allow-unauthenticated --port=3000'
+          env_vars: |
+            NEXT_PUBLIC_SERVER_URL=https://warehouse-server-url-placeholder.a.run.app 
+            # Note: You need to know the server URL beforehand or update it after server deployment.
+            # In a real pipeline, you might deploy server, get URL, then deploy client.

@@ -32,8 +32,12 @@ export interface DeviceAttributes {
     deviceAttributes?: DeviceAttributes;
 }
 
-export interface WorkstationAttributes {
-    queues: string[];
+export type RuleCondition = 'OFF' | 'MUST_HAVE' | 'MUST_NOT_HAVE';
+
+export interface DepartmentRules {
+    tested: RuleCondition;
+    sellable: RuleCondition;
+    serialized: RuleCondition;
 }
 
 export interface WarehouseEntity {
@@ -45,7 +49,14 @@ export interface WarehouseEntity {
     parentId: string | null;
     children: string[];
     deviceAttributes?: DeviceAttributes;
-    workstationAttributes?: WorkstationAttributes;
+    departmentRules?: DepartmentRules;
+    workstationAttributes?: {
+        queues: string[];
+    };
+    departmentAttributes?: {
+        allowMoveIn?: boolean;
+        allowMoveOut?: boolean;
+    };
 }
 
 export interface WarehouseState {
@@ -60,7 +71,7 @@ export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | n
     StaticRack: { allowedParents: ['StorageArea'], icon: 'Grid' },
     MobileRack: { allowedParents: ['StorageArea', 'MobileStorageParkingSpot'], icon: 'Truck' },
     MobileStorageParkingSpot: { allowedParents: ['StorageArea'], icon: 'ParkingSquare' },
-    Bin: { allowedParents: ['StaticRack', 'MobileRack'], icon: 'Box' },
+    Bin: { allowedParents: ['StaticRack', 'MobileRack'], icon: 'Inbox' },
     Box: { allowedParents: ['Bin', 'StaticRack', 'MobileRack'], icon: 'Package' },
     Workstation: { allowedParents: ['Department'], icon: 'Monitor' },
     Device: { allowedParents: ['Bin', 'Box', 'Workstation'], icon: 'Smartphone' },
