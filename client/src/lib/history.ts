@@ -6,6 +6,7 @@ export interface ActionLog {
     actionType: string;
     details: string;
     entityId?: string;
+    coalesceKey?: string;
 }
 
 class WarehouseHistory extends Dexie {
@@ -19,6 +20,9 @@ class WarehouseHistory extends Dexie {
         this.version(2).stores({
             logs: '++id, timestamp, actionType, entityId'
         });
+        this.version(3).stores({
+            logs: '++id, timestamp, actionType, entityId, coalesceKey'
+        });
     }
 }
 
@@ -31,13 +35,35 @@ export async function getEntityHistory(entityId: string) {
         .sortBy('timestamp');
 }
 
-export async function logAction(actionType: string, details: string, entityId?: string) {
+export async function logAction(actionType: string, details: string, entityId?: string, coalesceKey?: string) {
     try {
+        const now = Date.now();
+
+        if (coalesceKey && entityId) {
+            // Check for recent similar action to coalesce
+            const lastLog = await db.logs.orderBy('id').last();
+
+            if (lastLog &&
+                lastLog.entityId === entityId &&
+                lastLog.actionType === actionType &&
+                lastLog.coalesceKey === coalesceKey &&
+                (now - lastLog.timestamp) < 2000 // 2 second window
+            ) {
+                // Update existing log
+                await db.logs.update(lastLog.id!, {
+                    timestamp: now,
+                    details: details
+                });
+                return;
+            }
+        }
+
         await db.logs.add({
-            timestamp: Date.now(),
+            timestamp: now,
             actionType,
             details,
-            entityId
+            entityId,
+            coalesceKey
         });
     } catch (error) {
         console.error("Failed to log action:", error);

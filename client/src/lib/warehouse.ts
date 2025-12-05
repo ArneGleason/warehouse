@@ -15,6 +15,7 @@ export interface DeviceAttributes {
     sku?: string;
     vendor_sku?: string;
     po_number?: string;
+    presold_order_number?: string;
     imei?: string;
     barcode?: string;
     manufacturer?: string;
@@ -28,6 +29,7 @@ export interface DeviceAttributes {
     tested?: boolean;
     sellable?: boolean;
     queue?: string;
+    test_result?: any;
     // Device specific
     deviceAttributes?: DeviceAttributes;
 }
@@ -63,6 +65,7 @@ export interface WarehouseState {
     entities: Record<string, WarehouseEntity>;
     roots: string[];
     configTitle: string;
+    maxMoveWithoutConfirm: number;
 }
 
 export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | null)[], icon: string }> = {
@@ -71,7 +74,7 @@ export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | n
     StaticRack: { allowedParents: ['StorageArea'], icon: 'Grid' },
     MobileRack: { allowedParents: ['StorageArea', 'MobileStorageParkingSpot'], icon: 'Truck' },
     MobileStorageParkingSpot: { allowedParents: ['StorageArea'], icon: 'ParkingSquare' },
-    Bin: { allowedParents: ['StaticRack', 'MobileRack'], icon: 'Inbox' },
+    Bin: { allowedParents: ['StaticRack', 'MobileRack', 'Department'], icon: 'Inbox' },
     Box: { allowedParents: ['Bin', 'StaticRack', 'MobileRack'], icon: 'Package' },
     Workstation: { allowedParents: ['Department'], icon: 'Monitor' },
     Device: { allowedParents: ['Bin', 'Box', 'Workstation'], icon: 'Smartphone' },

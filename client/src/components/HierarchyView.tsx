@@ -23,6 +23,8 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { validateMove } from '@/lib/rules';
 import { MoveBlockedDialog } from '@/components/MoveBlockedDialog';
+import { MoveConfirmationDialog } from '@/components/MoveConfirmationDialog';
+import { UnboxInPlaceDialog } from '@/components/UnboxInPlaceDialog';
 import { DeleteConfirmationDialog } from '@/components/DeleteConfirmationDialog';
 import { HistoryDialog } from '@/components/HistoryDialog';
 import { CheckpointsDialog } from '@/components/CheckpointsDialog';
@@ -62,6 +64,8 @@ interface VirtualGroupNodeProps {
     draggedItems: { id: string; type: string }[];
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
+    onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
+    grouping: 'none' | 'po' | 'sku' | 'presold';
 }
 
 const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
@@ -80,12 +84,31 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
     onDragEnd,
     draggedItems,
     activeFilters,
-    onMoveBlocked
+    onMoveBlocked,
+    onMoveRequest,
+    grouping
 }) => {
     const { state } = useWarehouse();
     // Use a unique ID for the virtual node for expansion state
     const virtualId = getVirtualGroupId(groupKey, deviceIds[0]);
     const isExpanded = expandedIds.has(virtualId);
+
+    // Calculate Label
+    let label = groupKey;
+    if (grouping === 'sku' && deviceIds.length > 0) {
+        const firstDevice = state.entities[deviceIds[0]];
+        if (firstDevice && firstDevice.deviceAttributes) {
+            const { sku, model, grade } = firstDevice.deviceAttributes;
+            // Use the groupKey (which is the SKU) or fallback
+            // Actually groupKey IS the SKU when grouping='sku'.
+            // But let's be safe and use the attributes if available.
+            // Format: {{sku}} • {{model}} • {{grade}}
+            const safeSku = sku || groupKey;
+            const safeModel = model || 'Unknown Model';
+            const safeGrade = grade || 'Unknown Grade';
+            label = `${safeSku} • ${safeModel} • ${safeGrade}`;
+        }
+    }
 
     // Check if all devices in this group are selected
     const allSelected = deviceIds.every(id => selectedIds.has(id));
@@ -135,7 +158,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                         </div>
 
                         <Folder className="h-4 w-4 mr-2 text-blue-400 fill-blue-400/20" />
-                        <span className="text-sm truncate flex-1 font-medium">{groupKey}</span>
+                        <span className="text-sm truncate flex-1 font-medium">{label}</span>
 
                         <Badge variant="secondary" className="ml-2 h-4 px-1 text-[10px]">
                             {deviceIds.length}
@@ -196,6 +219,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                             draggedItems={draggedItems}
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
                         />
                     ))}
                 </div>
@@ -216,7 +240,7 @@ interface VirtualQueueNodeProps {
     toggleExpansion: (id: string) => void;
     onQuickMove: (ids: Set<string>) => void;
     onDelete: (ids: Set<string>) => void;
-    grouping: 'none' | 'po' | 'sku';
+    grouping: 'none' | 'po' | 'sku' | 'presold';
     dragOverId: string | null;
     setDragOverId: (id: string | null) => void;
     onDragStart: (items: { id: string; type: string }[]) => void;
@@ -224,6 +248,7 @@ interface VirtualQueueNodeProps {
     draggedItems: { id: string; type: string }[];
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
+    onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
 }
 
 const QUEUE_COLORS: Record<string, string> = {
@@ -251,9 +276,10 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
     onDragEnd,
     draggedItems,
     activeFilters = new Set(),
-    onMoveBlocked
+    onMoveBlocked,
+    onMoveRequest
 }) => {
-    const { state, updateEntity, moveEntities } = useWarehouse();
+    const { state, updateEntity } = useWarehouse();
     const virtualId = `queue-${parentId}-${queueName}`;
     const isExpanded = expandedIds.has(virtualId);
     const isSelected = selectedIds.has(virtualId);
@@ -280,45 +306,6 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
         // But if we did, we'd call onDragStart here.
         // onDragStart([{ id: virtualId, type: 'VirtualQueue' }]); 
     };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const draggedId = e.dataTransfer.getData('text/plain');
-
-        // Move to parent workstation AND update queue attribute
-        // We can't do both in one atomic moveEntity call unless we update moveEntity or do two calls.
-        // Better: moveEntity then updateEntity.
-        // Or: if already in parent, just updateEntity.
-
-        // We need to know if it's already a child.
-        // We don't have easy access to the dragged entity state here without context lookup, 
-        // but moveEntity handles the move.
-
-        moveEntities([draggedId], parentId);
-        // We need to wait for move? No, optimistic.
-        // But we also need to set the queue attribute.
-        updateEntity(draggedId, { deviceAttributes: { queue: queueName } as any }); // Need to merge? updateEntity merges.
-        // Note: updateEntity implementation in context does a merge of top-level properties.
-        // But for nested objects like deviceAttributes, we need to be careful.
-        // The context implementation: [id]: { ...entity, ...updates }
-        // So if we pass { deviceAttributes: { queue: 'foo' } }, it might overwrite other attributes if not careful.
-        // Let's check context implementation.
-        // Context: [id]: { ...entity, ...updates }
-        // So if we pass deviceAttributes, it replaces the whole object?
-        // Let's check updateEntity in WarehouseContext.
-        // It does: { ...entity, ...updates }.
-        // So yes, it replaces deviceAttributes. We need to merge inside updateEntity or pass the full object.
-        // Since we don't have the entity here easily, we rely on updateEntity to be smart or we need to fetch it.
-        // Actually, updateEntity in context is simple.
-        // We should probably improve updateEntity to handle partial updates of nested objects or we risk data loss.
-        // OR, we just assume we can't do this safely without reading state.
-        // Wait, we have `useWarehouse` which gives us `state`.
-        // So we can read it!
-    };
-
-    // We need state to do the safe update
-    // const { state } = useWarehouse(); // Already destructured above
 
     const handleSafeDrop = (e: React.DragEvent) => {
         e.preventDefault();
@@ -363,25 +350,20 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
             }
         });
 
-        // 2. Move to parent (only if parent is different)
-        // Small delay to ensure attribute update is processed/optimistically applied before move
-        // (though usually not strictly necessary if batched, but safe for race conditions)
-        setTimeout(() => {
-            // Check if any item actually needs a parent change
-            const itemsNeedingMove = draggedIds.filter(id => state.entities[id]?.parentId !== parentId);
+        // Check if any item actually needs a parent change
+        const itemsNeedingMove = draggedIds.filter(id => state.entities[id]?.parentId !== parentId);
 
-            if (itemsNeedingMove.length > 0) {
-                moveEntities(itemsNeedingMove, parentId);
-            }
+        if (itemsNeedingMove.length > 0) {
+            onMoveRequest(itemsNeedingMove, parentId);
+        }
 
-            // Auto-expand and select
-            if (!expandedIds.has(virtualId)) {
-                toggleExpansion(virtualId);
-            }
-            onSelect(new Set(draggedIds), e);
+        // Auto-expand and select
+        if (!expandedIds.has(virtualId)) {
+            toggleExpansion(virtualId);
+        }
+        onSelect(new Set(draggedIds), e);
 
-            toast.success(`Moved ${draggedIds.length} items to ${queueName}`);
-        }, 50);
+        toast.success(`Moved ${draggedIds.length} items to ${queueName}`);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
@@ -480,71 +462,32 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
 
             {isExpanded && (
                 <div>
-                    {grouping === 'none' ? (
-                        deviceIds.map(childId => (
-                            <HierarchyNode
-                                key={childId}
-                                entityId={childId}
-                                level={level + 1}
-                                onSelect={(idOrIds, e) => {
-                                    const ids = typeof idOrIds === 'string' ? new Set([idOrIds]) : idOrIds;
-                                    onSelect(ids, e);
-                                }}
-                                selectedIds={selectedIds}
-                                searchTerm=""
-                                onImport={() => { }}
-                                onDelete={(id) => onDelete(new Set([id]))}
-                                expandedIds={expandedIds}
-                                toggleExpansion={toggleExpansion}
-                                onQuickMove={(id) => onQuickMove(new Set([id]))}
-                                grouping="none"
-                                dragOverId={dragOverId}
-                                setDragOverId={setDragOverId}
-                                onDragStart={onDragStart}
-                                onDragEnd={onDragEnd}
-                                draggedItems={draggedItems}
-                                onMoveBlocked={onMoveBlocked}
-                            />
-                        ))
-                    ) : (
-                        (() => {
-                            const groups: Record<string, string[]> = {};
-                            deviceIds.forEach(id => {
-                                const device = state.entities[id];
-                                if (!device) return;
-                                let key = 'Unknown';
-                                if (grouping === 'po') {
-                                    key = device.deviceAttributes?.po_number || 'No PO';
-                                } else if (grouping === 'sku') {
-                                    key = device.deviceAttributes?.sku || 'No SKU';
-                                }
-                                if (!groups[key]) groups[key] = [];
-                                groups[key].push(id);
-                            });
-
-                            return Object.entries(groups).map(([key, ids]) => (
-                                <VirtualGroupNode
-                                    key={key}
-                                    groupKey={key}
-                                    deviceIds={ids}
-                                    level={level + 1}
-                                    onSelect={onSelect}
-                                    selectedIds={selectedIds}
-                                    expandedIds={expandedIds}
-                                    toggleExpansion={toggleExpansion}
-                                    onQuickMove={onQuickMove}
-                                    onDelete={onDelete}
-                                    dragOverId={dragOverId}
-                                    setDragOverId={setDragOverId}
-                                    onDragStart={onDragStart}
-                                    onDragEnd={onDragEnd}
-                                    draggedItems={draggedItems}
-                                    activeFilters={activeFilters}
-                                    onMoveBlocked={onMoveBlocked}
-                                />
-                            ));
-                        })()
-                    )}
+                    {deviceIds.map(childId => (
+                        <HierarchyNode
+                            key={childId}
+                            entityId={childId}
+                            level={level + 1}
+                            onSelect={(idOrIds, e) => {
+                                const ids = typeof idOrIds === 'string' ? new Set([idOrIds]) : idOrIds;
+                                onSelect(ids, e);
+                            }}
+                            selectedIds={selectedIds}
+                            searchTerm=""
+                            onImport={() => { }}
+                            onDelete={(id) => onDelete(new Set([id]))}
+                            expandedIds={expandedIds}
+                            toggleExpansion={toggleExpansion}
+                            onQuickMove={(id) => onQuickMove(new Set([id]))}
+                            grouping="none"
+                            dragOverId={dragOverId}
+                            setDragOverId={setDragOverId}
+                            onDragStart={onDragStart}
+                            onDragEnd={onDragEnd}
+                            draggedItems={draggedItems}
+                            onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
+                        />
+                    ))}
                 </div>
             )}
         </div>
@@ -643,7 +586,7 @@ interface HierarchyNodeProps {
     expandedIds: Set<string>;
     toggleExpansion: (id: string) => void;
     onQuickMove: (id: string) => void;
-    grouping: 'none' | 'po' | 'sku';
+    grouping: 'none' | 'po' | 'sku' | 'presold';
     dragOverId: string | null;
     setDragOverId: (id: string | null) => void;
     onDragStart: (items: { id: string; type: string }[]) => void;
@@ -651,6 +594,7 @@ interface HierarchyNodeProps {
     draggedItems: { id: string; type: string }[];
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
+    onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
 }
 
 const HierarchyNode: React.FC<HierarchyNodeProps> = ({
@@ -671,7 +615,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
     onDragEnd,
     draggedItems,
     activeFilters = new Set(),
-    onMoveBlocked
+    onMoveBlocked,
+    onMoveRequest
 }) => {
     const { state, addEntity, moveEntity, moveEntities, updateEntity } = useWarehouse();
     const entity = state.entities[entityId];
@@ -848,9 +793,18 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
 
         if (draggedIds.length === 0) return;
 
-        // Filter out self-drops
+        // Filter out self-drops (dropping onto itself)
         draggedIds = draggedIds.filter(id => id !== entityId);
         if (draggedIds.length === 0) return;
+
+        // Check if all dragged items are already children of the target
+        const allAlreadyInTarget = draggedIds.every(id => state.entities[id]?.parentId === entityId);
+        if (allAlreadyInTarget) {
+            // If all items are already in the target, silently ignore the move
+            // but ensure they remain selected.
+            onSelect(new Set(draggedIds), e);
+            return;
+        }
 
         // Check if target CAN be a parent of dragged items.
         // We assume all dragged items are of compatible types if they are selected together?
@@ -889,7 +843,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                 return;
             }
 
-            moveEntities(draggedIds, entityId);
+            onMoveRequest(draggedIds, entityId);
             toast.success(`Moved ${draggedIds.length} items to ${entity.label}`);
 
             // Handle Queue logic for Workstations
@@ -985,6 +939,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             onDragEnd={onDragEnd}
                             draggedItems={draggedItems}
                             onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
                         />
                     ))}
 
@@ -1009,6 +964,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             onDragEnd={onDragEnd}
                             draggedItems={draggedItems}
                             onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
                         />
                     ))}
                 </div>
@@ -1017,6 +973,9 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
 
         // Grouping Logic (PO/SKU)
         if (grouping !== 'none' && deviceChildren.length > 0) {
+            // Sort deviceChildren to ensure deterministic order for virtual group IDs
+            deviceChildren.sort();
+
             const groups: Record<string, string[]> = {};
 
             deviceChildren.forEach(id => {
@@ -1026,6 +985,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                     key = device.deviceAttributes?.po_number || 'No PO';
                 } else if (grouping === 'sku') {
                     key = device.deviceAttributes?.sku || 'No SKU';
+                } else if (grouping === 'presold') {
+                    key = device.deviceAttributes?.presold_order_number || 'No Presold Order';
                 }
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(id);
@@ -1055,6 +1016,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             draggedItems={draggedItems}
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
                         />
                     ))}
 
@@ -1065,6 +1027,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             groupKey={key}
                             deviceIds={ids}
                             level={level + 1}
+                            grouping={grouping}
+
                             onSelect={(ids, e) => {
                                 if (ids instanceof Set) {
                                     onSelect(ids, e);
@@ -1086,6 +1050,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             draggedItems={draggedItems}
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
                         />
                     ))}
                 </div>
@@ -1124,6 +1089,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                         draggedItems={draggedItems}
                         activeFilters={activeFilters}
                         onMoveBlocked={onMoveBlocked}
+                        onMoveRequest={onMoveRequest}
                     />
                 ))}
             </div>
@@ -1167,7 +1133,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                         <span className="text-sm truncate flex-1">
                             {(entity.type === 'Bin' || entity.type === 'Box') ? (() => {
                                 // Dynamic Bin/Box Label Logic
-                                const barcode = entity.barcode || entity.label; // Fallback to label if no barcode
+                                const barcode = entity.label; // Always use label, ignore barcode for display
                                 const devices = entity.children
                                     .map(id => state.entities[id])
                                     .filter(e => e && e.type === 'Device');
@@ -1250,6 +1216,11 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                                     <DropdownMenuItem onClick={() => onDelete(entityId)}>
                                         <Trash2 className="h-4 w-4 mr-2" /> Delete
                                     </DropdownMenuItem>
+                                    {entity.type === 'Box' && (
+                                        <DropdownMenuItem onClick={() => setUnboxTargetId(entityId)}>
+                                            <Icons.PackageOpen className="h-4 w-4 mr-2" /> Unbox In Place
+                                        </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuSub>
                                         <DropdownMenuSubTrigger>Add Child</DropdownMenuSubTrigger>
                                         <DropdownMenuSubContent>
@@ -1285,6 +1256,11 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             <Move className="h-4 w-4 mr-2" /> {entity.type === 'Device' ? 'Quick Move' : 'Quick Move Contents'}
                         </ContextMenuItem>
                     )}
+                    {entity.type === 'Box' && (
+                        <ContextMenuItem onClick={() => setUnboxTargetId(entityId)}>
+                            <Icons.PackageOpen className="h-4 w-4 mr-2" /> Unbox In Place
+                        </ContextMenuItem>
+                    )}
                     <ContextMenuSub>
                         <ContextMenuSubTrigger>Add Child</ContextMenuSubTrigger>
                         <ContextMenuSubContent>
@@ -1314,16 +1290,17 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
 interface HierarchyViewProps {
     onSelect: (ids: Set<string>) => void;
     selectedIds: Set<string>;
-    grouping: 'none' | 'po' | 'sku';
-    setGrouping: (grouping: 'none' | 'po' | 'sku') => void;
+    grouping: 'none' | 'po' | 'sku' | 'presold';
+    setGrouping: (grouping: 'none' | 'po' | 'sku' | 'presold') => void;
 }
 
 export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: HierarchyViewProps) {
-    const { state, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, canUndo } = useWarehouse();
+    const { state, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, canUndo, updateConfig, unboxEntities } = useWarehouse();
     const [searchTerm, setSearchTerm] = useState('');
     // grouping state moved to props
     const [importTargetId, setImportTargetId] = useState<string | null>(null);
     const [deleteTargetIds, setDeleteTargetIds] = useState<Set<string> | null>(null);
+    const [unboxTargetId, setUnboxTargetId] = useState<string | null>(null);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [isCheckpointsOpen, setIsCheckpointsOpen] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['warehouse-root'])); // Default expand root
@@ -1334,6 +1311,95 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
     const [singleBinExpansion, setSingleBinExpansion] = useState(false);
     const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
     const [moveBlockedInfo, setMoveBlockedInfo] = useState<{ blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] } | null>(null);
+    const [moveConfirmationInfo, setMoveConfirmationInfo] = useState<{ count: number; targetName: string; sourceName: string; skuSummary: string; draggedIds: string[]; targetId: string | null } | null>(null);
+
+    const maxMoveWithoutConfirm = state.maxMoveWithoutConfirm ?? 1;
+
+    const handleUnbox = (deleteBox: boolean) => {
+        if (!unboxTargetId) return;
+        const entity = state.entities[unboxTargetId];
+        if (!entity || entity.type !== 'Box') return;
+
+        unboxEntities(entity.id, entity.parentId, deleteBox);
+        toast.success(`Unboxed ${entity.label}`);
+        setUnboxTargetId(null);
+    };
+
+    const handleMoveRequest = (draggedIds: string[], targetId: string | null) => {
+        // ... (existing code)
+        if (draggedIds.length > maxMoveWithoutConfirm) {
+            const targetName = targetId ? (state.entities[targetId]?.label || 'Unknown') : 'Warehouse Root';
+
+            // Calculate Source Name
+            let sourceName = 'Unknown';
+            const firstItem = state.entities[draggedIds[0]];
+            if (firstItem && firstItem.parentId) {
+                const parent = state.entities[firstItem.parentId];
+                if (parent) {
+                    // Check if all items are from the same parent
+                    const allSameParent = draggedIds.every(id => state.entities[id]?.parentId === firstItem.parentId);
+                    sourceName = allSameParent ? parent.label : 'Various Locations';
+                } else if (firstItem.parentId === 'warehouse-root') {
+                    sourceName = 'Warehouse Root';
+                }
+            }
+
+            // Calculate SKU Summary
+            const skuCounts: Record<string, number> = {};
+            draggedIds.forEach(id => {
+                const entity = state.entities[id];
+                if (entity && entity.type === 'Device') {
+                    const sku = entity.deviceAttributes?.sku || 'Unknown SKU';
+                    skuCounts[sku] = (skuCounts[sku] || 0) + 1;
+                } else {
+                    const type = entity ? entity.type : 'Item';
+                    skuCounts[type] = (skuCounts[type] || 0) + 1;
+                }
+            });
+
+            const sortedSkus = Object.entries(skuCounts).sort((a, b) => b[1] - a[1]);
+            let skuSummary = '';
+            if (sortedSkus.length > 0) {
+                const [mostFrequentSku, count] = sortedSkus[0];
+                if (sortedSkus.length === 1) {
+                    skuSummary = mostFrequentSku;
+                } else {
+                    const otherCount = sortedSkus.slice(1).reduce((acc, [, c]) => acc + c, 0);
+                    skuSummary = `${mostFrequentSku} + ${otherCount} MORE`;
+                }
+            } else {
+                skuSummary = `${draggedIds.length} Items`;
+            }
+
+            setMoveConfirmationInfo({
+                count: draggedIds.length,
+                targetName,
+                sourceName,
+                skuSummary,
+                draggedIds,
+                targetId
+            });
+        } else {
+            moveEntities(draggedIds, targetId);
+            const targetName = targetId ? (state.entities[targetId]?.label || 'Unknown') : 'Warehouse Root';
+            toast.success(`Moved ${draggedIds.length} items to ${targetName}`);
+        }
+    };
+
+    // ... (rest of existing code)
+
+    // Fix setMaxMoveWithoutConfirm usage
+    // In render:
+    // onCheckedChange={(checked) => updateConfig({ maxMoveWithoutConfirm: checked ? 0 : 1 })}
+    // updateConfig({ maxMoveWithoutConfirm: val });
+
+    const handleConfirmMove = () => {
+        if (moveConfirmationInfo) {
+            moveEntities(moveConfirmationInfo.draggedIds, moveConfirmationInfo.targetId);
+            toast.success(`Moved ${moveConfirmationInfo.count} items to ${moveConfirmationInfo.targetName}`);
+            setMoveConfirmationInfo(null);
+        }
+    };
 
     const availableFilters = [
         { id: 'sellable', label: 'Sellable' },
@@ -1378,43 +1444,94 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                 const entity = state.entities[id];
                 if (!entity) return;
 
-                // If grouping is active and we have devices, we need to replicate the rendering logic
-                const deviceChildren = entity.children.filter(childId => state.entities[childId]?.type === 'Device');
-                const nonDeviceChildren = entity.children.filter(childId => state.entities[childId]?.type !== 'Device');
+                // --- Grouping Logic ---
+                if (grouping !== 'none') {
+                    const deviceChildren = entity.children.filter(childId => state.entities[childId]?.type === 'Device').sort();
+                    const nonDeviceChildren = entity.children.filter(childId => state.entities[childId]?.type !== 'Device');
 
-                // 1. Render non-device children first (matching renderChildren logic)
-                traverse(nonDeviceChildren);
+                    // 1. Non-Device Children
+                    traverse(nonDeviceChildren);
 
-                // 2. Render groups or devices
-                if (grouping !== 'none' && deviceChildren.length > 0) {
-                    // Grouping logic
-                    const groups: Record<string, string[]> = {};
+                    // 2. Virtual Groups
+                    if (deviceChildren.length > 0) {
+                        const groups: Record<string, string[]> = {};
+                        deviceChildren.forEach(childId => {
+                            const device = state.entities[childId];
+                            let key = 'Unknown';
+                            if (grouping === 'po') {
+                                key = device.deviceAttributes?.po_number || 'No PO';
+                            } else if (grouping === 'sku') {
+                                key = device.deviceAttributes?.sku || 'No SKU';
+                            } else if (grouping === 'presold') {
+                                key = device.deviceAttributes?.presold_order_number || 'No Presold Order';
+                            }
+                            if (!groups[key]) groups[key] = [];
+                            groups[key].push(childId);
+                        });
+
+                        // Traverse Groups
+                        Object.entries(groups).forEach(([key, groupIds]) => {
+                            const virtualId = getVirtualGroupId(key, groupIds[0]);
+                            visible.push(virtualId);
+
+                            if (expandedIds.has(virtualId)) {
+                                groupIds.forEach(childId => visible.push(childId));
+                            }
+                        });
+                    }
+                    return;
+                }
+
+                // --- No Grouping ---
+
+                // Workstation Logic
+                if (entity.type === 'Workstation') {
+                    const deviceChildren = entity.children.filter(childId => state.entities[childId]?.type === 'Device');
+                    const nonDeviceChildren = entity.children.filter(childId => state.entities[childId]?.type !== 'Device');
+
+                    // 1. Non-Device Children
+                    traverse(nonDeviceChildren);
+
+                    // 2. Virtual Queues
+                    const queues = ['Assigned', 'Active', 'Done', 'Blocked'];
+                    const devicesByQueue: Record<string, string[]> = {};
+                    queues.forEach(q => devicesByQueue[q] = []);
+
                     deviceChildren.forEach(childId => {
                         const device = state.entities[childId];
-                        let key = 'Unknown';
-                        if (grouping === 'po') {
-                            key = device.deviceAttributes?.po_number || 'No PO';
-                        } else if (grouping === 'sku') {
-                            key = device.deviceAttributes?.sku || 'No SKU';
+                        const q = device.deviceAttributes?.queue;
+                        if (q && queues.includes(q)) {
+                            devicesByQueue[q].push(childId);
+                        } else {
+                            devicesByQueue['Assigned'].push(childId);
                         }
-                        if (!groups[key]) groups[key] = [];
-                        groups[key].push(childId);
                     });
 
-                    // Traverse groups
-                    Object.entries(groups).forEach(([key, groupIds]) => {
-                        const virtualId = getVirtualGroupId(key, groupIds[0]);
+                    queues.forEach(q => {
+                        const virtualId = `queue-${id}-${q}`;
                         visible.push(virtualId);
 
                         if (expandedIds.has(virtualId)) {
-                            // If group is expanded, add its children
-                            groupIds.forEach(childId => visible.push(childId));
+                            // Devices in queue
+                            devicesByQueue[q].forEach(childId => visible.push(childId));
                         }
                     });
-                } else {
-                    // Normal rendering for devices
-                    traverse(deviceChildren);
+                    return;
                 }
+
+                // Bin Logic
+                if (entity.type === 'Bin') {
+                    const devices = entity.children.filter(childId => state.entities[childId]?.type === 'Device');
+                    const others = entity.children.filter(childId => state.entities[childId]?.type !== 'Device');
+
+                    // Devices first, then others
+                    traverse(devices);
+                    traverse(others);
+                    return;
+                }
+
+                // Default Logic
+                traverse(entity.children);
             });
         };
 
@@ -1489,10 +1606,8 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
         } else if (e.shiftKey && lastSelectedId && typeof idOrIds === 'string') {
             // Range select
             const visibleItems = getVisibleItems();
-            console.log('visibleItems', visibleItems);
             const lastIndex = visibleItems.indexOf(lastSelectedId);
             const currentIndex = visibleItems.indexOf(primaryId);
-            console.log('indices', { lastIndex, currentIndex });
 
             if (lastIndex !== -1 && currentIndex !== -1) {
                 const start = Math.min(lastIndex, currentIndex);
@@ -1553,7 +1668,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
     const handleQuickMoveConfirm = (targetId: string | null) => {
         if (quickMoveIds) {
             const count = quickMoveIds.size;
-            moveEntities(Array.from(quickMoveIds), targetId);
+            handleMoveRequest(Array.from(quickMoveIds), targetId);
 
             const targetName = targetId ? (state.entities[targetId]?.label || 'Unknown') : 'Warehouse Root';
             toast.success(`Moved ${count} items to ${targetName}`, {
@@ -1600,8 +1715,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                 if (draggedIds.length === 0) return;
 
                 // Move to root
-                moveEntities(draggedIds, null);
-                toast.success(`Moved ${draggedIds.length} items to Root`);
+                handleMoveRequest(draggedIds, null);
             }}
         >
             <div className="p-2 border-b space-y-2">
@@ -1644,6 +1758,36 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                                         checked={singleBinExpansion}
                                         onCheckedChange={setSingleBinExpansion}
                                     />
+                                </div>
+                                <div className="px-2 py-2 space-y-2 border-t">
+                                    <div className="flex items-center justify-between">
+                                        <Label htmlFor="always-confirm" className="text-sm font-medium">Always Confirm Moves</Label>
+                                        <Switch
+                                            id="always-confirm"
+                                            checked={maxMoveWithoutConfirm === 0}
+                                            onCheckedChange={(checked) => updateConfig({ maxMoveWithoutConfirm: checked ? 0 : 1 })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="max-move" className={cn("text-sm font-medium", maxMoveWithoutConfirm === 0 && "text-muted-foreground")}>
+                                            Max Move w/o Confirm
+                                        </Label>
+                                        <Input
+                                            id="max-move"
+                                            type="number"
+                                            min="0"
+                                            value={maxMoveWithoutConfirm === 0 ? '' : maxMoveWithoutConfirm}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value);
+                                                if (!isNaN(val) && val > 0) {
+                                                    updateConfig({ maxMoveWithoutConfirm: val });
+                                                }
+                                            }}
+                                            disabled={maxMoveWithoutConfirm === 0}
+                                            placeholder={maxMoveWithoutConfirm === 0 ? "Always Confirm" : ""}
+                                            className="h-8"
+                                        />
+                                    </div>
                                 </div>
                             </DropdownMenuContent>
                         </DropdownMenu>
@@ -1717,6 +1861,10 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             <RadioGroupItem value="sku" id="sku" />
                             <Label htmlFor="sku" className="text-xs">SKU</Label>
                         </div>
+                        <div className="flex items-center space-x-1">
+                            <RadioGroupItem value="presold" id="presold" />
+                            <Label htmlFor="presold" className="text-xs">Presold</Label>
+                        </div>
                     </RadioGroup>
                 </div>
             </div>
@@ -1756,8 +1904,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                         if (draggedIds.length === 0) return;
 
                         // Move to root
-                        moveEntities(draggedIds, null);
-                        toast.success(`Moved ${draggedIds.length} items to Root`);
+                        handleMoveRequest(draggedIds, null);
                     }}
                 >
                     {state.roots.map(rootId => (
@@ -1780,6 +1927,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             onDragEnd={handleGlobalDragEnd}
                             draggedItems={draggedItems}
                             onMoveBlocked={setMoveBlockedInfo}
+                            onMoveRequest={handleMoveRequest}
                         />
                     ))}
                     {state.roots.length === 0 && (
@@ -1806,12 +1954,39 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                     failedDeviceIds={moveBlockedInfo.failedDeviceIds}
                 />
             )}
+
+            {moveConfirmationInfo && (
+                <MoveConfirmationDialog
+                    isOpen={!!moveConfirmationInfo}
+                    onClose={() => setMoveConfirmationInfo(null)}
+                    onConfirm={handleConfirmMove}
+                    count={moveConfirmationInfo.count}
+                    targetName={moveConfirmationInfo.targetName}
+                    sourceName={moveConfirmationInfo.sourceName}
+                    skuSummary={moveConfirmationInfo.skuSummary}
+                />
+            )}
             {deleteTargetIds && (
                 <DeleteConfirmationDialog
                     isOpen={!!deleteTargetIds}
                     onClose={() => setDeleteTargetIds(null)}
-                    onConfirm={confirmDelete}
-                    entityName={deleteTargetIds.size > 1 ? `${deleteTargetIds.size} items` : (state.entities[Array.from(deleteTargetIds)[0]]?.label || 'Item')}
+                    onConfirm={() => {
+                        if (deleteTargetIds) {
+                            deleteEntities(Array.from(deleteTargetIds));
+                            setDeleteTargetIds(null);
+                            toast.success(`Deleted ${deleteTargetIds.size} items`);
+                        }
+                    }}
+                    count={deleteTargetIds.size}
+                />
+            )}
+
+            {unboxTargetId && (
+                <UnboxInPlaceDialog
+                    isOpen={!!unboxTargetId}
+                    onClose={() => setUnboxTargetId(null)}
+                    deviceCount={state.entities[unboxTargetId]?.children.length || 0}
+                    onConfirm={handleUnbox}
                 />
             )}
 

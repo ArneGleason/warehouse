@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { socket } from '@/lib/socket';
 import { logAction } from '@/lib/history';
 import { WarehouseEntity, WarehouseState, createEntity, canMoveEntity, generateDeviceLabel } from '@/lib/warehouse';
@@ -15,18 +15,80 @@ type Action =
     | { type: 'DELETE_ENTITIES'; payload: { ids: string[] } }
     | { type: 'MOVE_ENTITY'; payload: { id: string; targetId: string | null; index?: number } }
     | { type: 'BATCH_MOVE'; payload: { moves: { id: string; targetId: string | null }[] } }
-    | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } };
+    | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
+    | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
+    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number } }
+    | { type: 'BOX_ENTITIES'; payload: { boxId: string; boxLabel: string; boxBarcode: string; parentId: string | null; deviceIds: string[] } }
+    | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } };
 
 // Initial State
 const initialState: WarehouseState = {
     entities: {},
     roots: [],
     configTitle: 'Untitled Layout',
+    maxMoveWithoutConfirm: 1,
 };
 
 // Reducer
 function warehouseReducer(state: WarehouseState, action: Action): WarehouseState {
     switch (action.type) {
+        case 'UNBOX_ENTITIES': {
+            const { boxId, parentId, deleteBox } = action.payload;
+            const box = state.entities[boxId];
+            if (!box) return state;
+
+            let newState = { ...state };
+            let entities = { ...newState.entities };
+            let roots = [...newState.roots];
+
+            // 1. Move all children of the box to the parentId (or root)
+            const childrenIds = box.children;
+            childrenIds.forEach(childId => {
+                const child = entities[childId];
+                if (!child) return;
+
+                // Update child parent pointer
+                entities[childId] = { ...child, parentId: parentId };
+
+                // Add to new parent's children list
+                if (parentId) {
+                    const parent = entities[parentId];
+                    if (parent) {
+                        const uniqueChildren = Array.from(new Set([...parent.children, childId]));
+                        entities[parentId] = { ...parent, children: uniqueChildren };
+                    }
+                } else {
+                    roots = Array.from(new Set([...roots, childId]));
+                }
+            });
+
+            // 2. Clear box children
+            entities[boxId] = { ...box, children: [] };
+
+            // 3. Delete box if requested
+            if (deleteBox) {
+                // Remove from parent
+                if (box.parentId) {
+                    const parent = entities[box.parentId];
+                    if (parent) {
+                        entities[box.parentId] = {
+                            ...parent,
+                            children: parent.children.filter(id => id !== boxId)
+                        };
+                    }
+                } else {
+                    roots = roots.filter(id => id !== boxId);
+                }
+                delete entities[boxId];
+            }
+
+            return {
+                ...newState,
+                entities,
+                roots
+            };
+        }
+
         case 'SET_STATE': {
             const incoming = action.payload;
             const sanitizedEntities = { ...incoming.entities };
@@ -287,6 +349,85 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
             return newState;
         }
 
+        case 'UPDATE_CONFIG': {
+            return {
+                ...state,
+                ...action.payload
+            };
+        }
+
+        case 'BOX_ENTITIES': {
+            const { boxId, boxLabel, boxBarcode, parentId, deviceIds } = action.payload;
+            let newState = { ...state };
+            let entities = { ...newState.entities };
+            let roots = [...newState.roots];
+
+            // 1. Create Box Entity
+            const newBox: WarehouseEntity = {
+                id: boxId,
+                type: 'Box',
+                label: boxLabel,
+                barcode: boxBarcode,
+                parentId: parentId,
+                children: [], // Will be populated below
+                deviceAttributes: undefined
+            };
+            entities[boxId] = newBox;
+
+            // 2. Add Box to Parent
+            if (parentId) {
+                const parent = entities[parentId];
+                if (parent) {
+                    const uniqueChildren = Array.from(new Set([...parent.children, boxId]));
+                    entities[parentId] = {
+                        ...parent,
+                        children: uniqueChildren
+                    };
+                }
+            } else {
+                roots = Array.from(new Set([...roots, boxId]));
+            }
+
+            // 3. Move Devices to Box
+            const boxChildren: string[] = [];
+            deviceIds.forEach(deviceId => {
+                const device = entities[deviceId];
+                if (!device) return;
+
+                // Remove from old parent
+                if (device.parentId) {
+                    const oldParent = entities[device.parentId];
+                    if (oldParent) {
+                        entities[device.parentId] = {
+                            ...oldParent,
+                            children: oldParent.children.filter(child => child !== deviceId)
+                        };
+                    }
+                } else {
+                    roots = roots.filter(root => root !== deviceId);
+                }
+
+                // Update Device
+                entities[deviceId] = {
+                    ...device,
+                    parentId: boxId
+                };
+                boxChildren.push(deviceId);
+            });
+
+            // Update Box children
+            entities[boxId] = {
+                ...entities[boxId],
+                children: boxChildren
+            };
+
+            return {
+                ...newState,
+                entities,
+                roots
+            };
+        }
+
         default:
             return state;
     }
@@ -295,7 +436,7 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
 // Context
 interface WarehouseContextType {
     state: WarehouseState;
-    addEntity: (type: any, parentId?: string | null) => void;
+    addEntity: (type: any, parentId?: string | null) => string;
     updateEntity: (id: string, updates: Partial<WarehouseEntity>) => void;
     deleteEntity: (id: string) => void;
     deleteEntities: (ids: string[]) => void;
@@ -308,6 +449,9 @@ interface WarehouseContextType {
     undo: () => void;
     canUndo: boolean;
     isConnected: boolean;
+    updateConfig: (config: { maxMoveWithoutConfirm?: number }) => void;
+    boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
+    unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
 }
 
 const WarehouseContext = createContext<WarehouseContextType | undefined>(undefined);
@@ -322,6 +466,12 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
     const [isConnected, setIsConnected] = useState(false);
     const [layoutId, setLayoutId] = useState('default-layout'); // Hardcoded for now
     const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
+
+    // Ref to track latest state for async/callback access
+    const stateRef = useRef(state);
+    useEffect(() => {
+        stateRef.current = state;
+    }, [state]);
 
     // Socket Connection
     useEffect(() => {
@@ -380,7 +530,7 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         if (type === 'Bin' || type === 'Box') {
             const existingEntities = Object.values(state.entities).filter(e => e.type === type);
             const nextNum = existingEntities.length + 1;
-            const prefix = type === 'Bin' ? 'BX' : 'BOX'; // Or maybe just BX for both? User example was BX_001 for Bin. Let's use BOX for Box to distinguish? Or maybe BX for Bin and something else for Box?
+            const prefix = type === 'Bin' ? 'BN' : 'BOX'; // Or maybe just BX for both? User example was BX_001 for Bin. Let's use BOX for Box to distinguish? Or maybe BX for Bin and something else for Box?
             // User request: "automaticaly create short unique barcode for any new box (e.g. BX_001)" - this was for "box label" but context was "Bin".
             // Now user says "same thing to happen for Boxes".
             // If Bin is BX, maybe Box is PKG? or BOX?
@@ -395,6 +545,7 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         dispatch(action);
         saveState(newState);
         logAction('CREATE', `Created ${type}: ${entity.label}`, entity.id);
+        return entity.id;
     };
 
     const updateEntity = (id: string, updates: Partial<WarehouseEntity>) => {
@@ -411,7 +562,13 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         const newState = warehouseReducer(state, action);
         dispatch(action);
         saveState(newState);
-        logAction('UPDATE', `Updated properties for ${state.entities[id]?.label || id}`, id);
+
+        // Determine coalesce key (e.g. "label", "description")
+        // If multiple keys, maybe join them or don't coalesce.
+        const keys = Object.keys(updates);
+        const coalesceKey = keys.length === 1 ? keys[0] : undefined;
+
+        logAction('UPDATE', `Updated properties for ${state.entities[id]?.label || id}`, id, coalesceKey);
     };
 
     const deleteEntity = (id: string) => {
@@ -520,15 +677,7 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
 
             // We need to dispatch these updates too so the reducer stays in sync if we used dispatch for BATCH_MOVE
             // But we can't easily dispatch "BATCH_UPDATE".
-            // We can dispatch multiple UPDATE_ENTITY or add BATCH_UPDATE.
-            // Or we can just rely on SET_STATE if we had it, but we don't want to reload everything.
-            // Let's add BATCH_UPDATE to reducer? Or just iterate.
-            // Iterating might be slow for many items but safe.
-            // Actually, we can just save the final state and dispatch SET_STATE? No, that might flicker.
-            // Let's just loop dispatch UPDATE_ENTITY for now, or better:
-            // We already calculated `newState` with the updates.
-            // We can just force the state update if we had a way.
-            // But `dispatch` needs an action.
+            // Or we can just save the final state and dispatch SET_STATE? No, that might flicker.
             // Let's just dispatch the moves first (already done above via action const), 
             // then dispatch updates.
 
@@ -595,17 +744,20 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, data: state }),
         });
-        if (!res.ok) throw new Error('Failed to create checkpoint');
+        if (res.ok) {
+            logAction('CHECKPOINT', `Created checkpoint: ${name}`, 'system');
+        }
     };
 
     const restoreCheckpoint = async (checkpointId: string) => {
-        const res = await fetch(`http://localhost:3001/api/layouts/${layoutId}/restore/${checkpointId}`, {
+        const res = await fetch(`http://localhost:3001/api/layouts/${layoutId}/checkpoints/${checkpointId}/restore`, {
             method: 'POST',
         });
-        if (!res.ok) throw new Error('Failed to restore checkpoint');
-        const { data } = await res.json();
-        dispatch({ type: 'SET_STATE', payload: data });
-        logAction('RESTORE', `Restored checkpoint`, checkpointId);
+        if (res.ok) {
+            const data = await res.json();
+            dispatch({ type: 'SET_STATE', payload: data.data });
+            logAction('CHECKPOINT', `Restored checkpoint`, 'system');
+        }
     };
 
     const loadCheckpoints = async () => {
@@ -615,8 +767,60 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         return checkpoints;
     };
 
+    const updateConfig = (config: { maxMoveWithoutConfirm?: number }) => {
+        const action: Action = { type: 'UPDATE_CONFIG', payload: config };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CONFIG', `Updated config`, 'config');
+    };
+
+    const boxEntities = (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => {
+        // Use stateRef to ensure we have latest state if needed, though arguments provide most info.
+        // But for safety, we might want to check if devices still exist?
+        // The reducer handles basic checks.
+
+        const action: Action = {
+            type: 'BOX_ENTITIES',
+            payload: { boxId, boxLabel, boxBarcode, parentId, deviceIds }
+        };
+        const newState = warehouseReducer(stateRef.current, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('BOX', `Boxed ${deviceIds.length} items into ${boxLabel}`, boxId);
+    };
+
+    const unboxEntities = (boxId: string, parentId: string | null, deleteBox: boolean) => {
+        const action: Action = {
+            type: 'UNBOX_ENTITIES',
+            payload: { boxId, parentId, deleteBox }
+        };
+        const newState = warehouseReducer(stateRef.current, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UNBOX', `Unboxed ${boxId}`, boxId);
+    };
+
     return (
-        <WarehouseContext.Provider value={{ state, addEntity, updateEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, addBulkEntities, createCheckpoint, restoreCheckpoint, loadCheckpoints, undo, canUndo: undoStack.length > 0, isConnected }}>
+        <WarehouseContext.Provider value={{
+            state,
+            addEntity,
+            updateEntity,
+            deleteEntity,
+            deleteEntities,
+            moveEntity,
+            moveEntities,
+            addBulkEntities,
+            createCheckpoint,
+            restoreCheckpoint,
+            loadCheckpoints,
+            undo,
+            canUndo: undoStack.length > 0,
+            isConnected,
+            updateConfig,
+            boxEntities,
+            unboxEntities
+        }}>
             {children}
         </WarehouseContext.Provider>
     );
