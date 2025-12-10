@@ -4,11 +4,11 @@ services:
   server:
     build: ./server
     ports:
-      - "3011:3001"
+      - "3011:3011"
     volumes:
       - warehouse_comparison_data:/app/data
     environment:
-      - PORT=3001
+      - PORT=3011
     restart: always
 
   client:
