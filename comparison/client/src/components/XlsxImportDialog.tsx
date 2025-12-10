@@ -26,6 +26,12 @@ export function XlsxImportDialog({ isOpen, onClose, targetId }: XlsxImportDialog
     const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    React.useEffect(() => {
+        if (isOpen) {
+            console.log('[XlsxImportDialog] Opened with targetId:', targetId);
+        }
+    }, [isOpen, targetId]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = e.target.files?.[0];
         if (selectedFile) {
@@ -54,6 +60,7 @@ export function XlsxImportDialog({ isOpen, onClose, targetId }: XlsxImportDialog
     };
 
     const handleImport = () => {
+        console.log('[XlsxImportDialog] handleImport called. targetId:', targetId);
         if (!previewData.length) return;
 
         const newEntities: { entity: WarehouseEntity, parentId: string }[] = [];

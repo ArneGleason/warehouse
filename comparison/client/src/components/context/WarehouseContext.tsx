@@ -1,4 +1,5 @@
 "use client";
+import { toast } from 'sonner';
 
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { socket } from '@/lib/socket';
@@ -19,7 +20,7 @@ type Action =
     | { type: 'BATCH_MOVE'; payload: { moves: { id: string; targetId: string | null }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
-    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null } }
+    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null } }
     | { type: 'BOX_ENTITIES'; payload: { boxId: string; boxLabel: string; boxBarcode: string; parentId: string | null; deviceIds: string[] } }
     | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } }
     | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } };
@@ -32,6 +33,7 @@ const initialState: WarehouseState = {
     maxMoveWithoutConfirm: 1,
     processingSourceBinId: null,
     processingDestBinId: null,
+    processingExceptionBinId: null,
 };
 
 // Reducer
@@ -514,23 +516,21 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
 // Context
 interface WarehouseContextType {
     state: WarehouseState;
-    addEntity: (type: any, parentId?: string | null) => string;
+    addEntity: (type: any, parentId?: string | null, overrides?: Partial<WarehouseEntity>) => string;
     updateEntity: (id: string, updates: Partial<WarehouseEntity>) => void;
     deleteEntity: (id: string) => void;
     deleteEntities: (ids: string[]) => void;
     moveEntity: (id: string, targetId: string | null, index?: number) => void;
     moveEntities: (ids: string[], targetId: string | null) => void;
     addBulkEntities: (entities: { entity: WarehouseEntity; parentId: string }[]) => void;
-    createCheckpoint: (name: string) => Promise<void>;
-    restoreCheckpoint: (checkpointId: string) => Promise<void>;
-    loadCheckpoints: () => Promise<any[]>;
     undo: () => void;
     canUndo: boolean;
     isConnected: boolean;
-    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null }) => void;
+    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null }) => void;
     boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
     unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
     updateEntities: (updates: { id: string; updates: Partial<WarehouseEntity> }[]) => void;
+    setWarehouseState: (newState: WarehouseState) => void;
 }
 
 const WarehouseContext = createContext<WarehouseContextType | undefined>(undefined);
@@ -590,7 +590,10 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
                     dispatch({ type: 'SET_STATE', payload: data.data });
                 }
             })
-            .catch(err => console.error("Failed to load layout", err));
+            .catch(err => {
+                console.error("Failed to load layout", err);
+                toast.error(`Failed to load layout: ${err.message}`);
+            });
     }, [layoutId]);
 
     const saveState = (newState: WarehouseState) => {
@@ -601,22 +604,24 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         }).catch(err => console.error("Failed to save", err));
     };
 
-    // Wrapper functions that dispatch AND save
-    const addEntity = (type: any, parentId: string | null = null) => {
-        const entity = createEntity(type, parentId);
+    const setWarehouseState = (newState: WarehouseState) => {
+        dispatch({ type: 'SET_STATE', payload: newState });
+        saveState(newState);
+    };
 
-        // Auto-generate barcode for Bins and Boxes
-        if (type === 'Bin' || type === 'Box') {
+    // Wrapper functions that dispatch AND save
+    const addEntity = (type: any, parentId: string | null = null, overrides: Partial<WarehouseEntity> = {}) => {
+        const baseEntity = createEntity(type, parentId);
+        const entity = { ...baseEntity, ...overrides };
+
+        // Auto-generate barcode for Bins and Boxes if not overridden
+        if ((type === 'Bin' || type === 'Box') && !overrides.barcode) {
             const existingEntities = Object.values(state.entities).filter(e => e.type === type);
             const nextNum = existingEntities.length + 1;
-            const prefix = type === 'Bin' ? 'BN' : 'BOX'; // Or maybe just BX for both? User example was BX_001 for Bin. Let's use BOX for Box to distinguish? Or maybe BX for Bin and something else for Box?
-            // User request: "automaticaly create short unique barcode for any new box (e.g. BX_001)" - this was for "box label" but context was "Bin".
-            // Now user says "same thing to happen for Boxes".
-            // If Bin is BX, maybe Box is PKG? or BOX?
-            // Let's use 'BOX' for Box type to avoid collision if they share namespace, or just distinct prefixes.
+            const prefix = type === 'Bin' ? 'BN' : 'BOX';
             const barcode = `${prefix}_${nextNum.toString().padStart(3, '0')}`;
             entity.barcode = barcode;
-            entity.label = barcode;
+            if (!overrides.label) entity.label = barcode;
         }
 
         const action: Action = { type: 'ADD_ENTITY', payload: { entity, parentId } };
@@ -825,42 +830,16 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
     };
 
     const addBulkEntities = (entities: { entity: WarehouseEntity; parentId: string }[]) => {
+        console.log('[WarehouseContext] addBulkEntities called. Count:', entities.length);
+        if (entities.length > 0) {
+            console.log('[WarehouseContext] First entity parentId:', entities[0].parentId);
+        }
+
         const action: Action = { type: 'ADD_BULK_ENTITIES', payload: { entities } };
         const newState = warehouseReducer(state, action);
         dispatch(action);
         saveState(newState);
-        const parentIdForLog = entities.length > 0 ? entities[0].parentId : null;
-        const parentLabelForLog = parentIdForLog ? (state.entities[parentIdForLog]?.label || 'container') : 'Root';
-        logAction('BULK_IMPORT', `Imported ${entities.length} items into ${parentLabelForLog}`, parentIdForLog || 'N/A');
-    };
-
-    const createCheckpoint = async (name: string) => {
-        const res = await fetch(`${SERVER_URL}/api/layouts/${layoutId}/checkpoints`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, data: state }),
-        });
-        if (res.ok) {
-            logAction('CHECKPOINT', `Created checkpoint: ${name}`, 'system');
-        }
-    };
-
-    const restoreCheckpoint = async (checkpointId: string) => {
-        const res = await fetch(`${SERVER_URL}/api/layouts/${layoutId}/checkpoints/${checkpointId}/restore`, {
-            method: 'POST',
-        });
-        if (res.ok) {
-            const data = await res.json();
-            dispatch({ type: 'SET_STATE', payload: data.data });
-            logAction('CHECKPOINT', `Restored checkpoint`, 'system');
-        }
-    };
-
-    const loadCheckpoints = async () => {
-        const res = await fetch(`${SERVER_URL}/api/layouts/${layoutId}/checkpoints`);
-        if (!res.ok) throw new Error('Failed to load checkpoints');
-        const { checkpoints } = await res.json();
-        return checkpoints;
+        logAction('CREATE', `Bulk created ${entities.length} entities`, entities[0].entity.id);
     };
 
     const updateConfig = (config: { maxMoveWithoutConfirm?: number }) => {
@@ -907,16 +886,14 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             moveEntity,
             moveEntities,
             addBulkEntities,
-            createCheckpoint,
-            restoreCheckpoint,
-            loadCheckpoints,
             undo,
             canUndo: undoStack.length > 0,
             isConnected,
             updateConfig,
             boxEntities,
             unboxEntities,
-            updateEntities
+            updateEntities,
+            setWarehouseState,
         }}>
             {children}
         </WarehouseContext.Provider>

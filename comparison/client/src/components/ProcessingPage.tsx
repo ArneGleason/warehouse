@@ -281,9 +281,10 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     // Check Config
-    const isConfigured = state.processingSourceBinId && state.processingDestBinId;
+    const isConfigured = state.processingSourceBinId && state.processingDestBinId; // Exception bin is optional
     const sourceBinName = state.processingSourceBinId ? state.entities[state.processingSourceBinId]?.label || 'Unknown Bin' : null;
     const destBinName = state.processingDestBinId ? state.entities[state.processingDestBinId]?.label || 'Unknown Bin' : null;
+    const exceptionBinName = state.processingExceptionBinId ? state.entities[state.processingExceptionBinId]?.label || 'Unknown Bin' : null;
 
     // Helper to check if an entity is a descendant of a specific parent
     const isDescendant = (entityId: string, ancestorId: string): boolean => {
@@ -305,6 +306,7 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
 
     const sourceBinCount = getBinDeviceCount(state.processingSourceBinId || null);
     const destBinCount = getBinDeviceCount(state.processingDestBinId || null);
+    const exceptionBinCount = getBinDeviceCount(state.processingExceptionBinId || null);
 
     const selectedResult = incomingResults.find(r => r.id === selectedResultId);
 
@@ -567,6 +569,23 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
             .catch(() => toast.error("Failed to update test result status"));
     };
 
+    const handleExceptionProcess = (deviceId: string) => {
+        if (!state.processingExceptionBinId) {
+            toast.error("Exception Bin not configured");
+            return;
+        }
+
+        moveEntity(deviceId, state.processingExceptionBinId);
+
+        // Reset State (keep selection if you want, but probably safer to clear to avoid confusion)
+        setPendingProcess(null);
+        setFoundDevice(null);
+        // Do NOT clear selectedResultId or results, as we might want to try again with another device?
+        // Or should we assume the result was bad? No, exception is usually physical device issue.
+        // Let's clear pending UI elements.
+        toast.info("Device moved to Exception Bin");
+    };
+
     const handleMatchDevice = (deviceId: string) => {
         if (!selectedResult) return;
         setPendingProcess({ deviceId, result: selectedResult });
@@ -698,8 +717,11 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                     {isConfigured ? (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground border-l pl-4">
                             <div className="flex flex-col">
-                                <span>Source: <span className="font-medium text-foreground">{sourceBinName}</span> <span className="text-[10px] bg-muted px-1 rounded-full">{sourceBinCount}</span></span>
-                                <span>Dest: <span className="font-medium text-foreground">{destBinName}</span> <span className="text-[10px] bg-muted px-1 rounded-full">{destBinCount}</span></span>
+                                <span>Source: <span className="font-medium text-foreground hover:underline cursor-pointer" onClick={() => state.processingSourceBinId && onNavigateToExplorer?.(state.processingSourceBinId)}>{sourceBinName}</span> <span className="text-[10px] bg-muted px-1 rounded-full">{sourceBinCount}</span></span>
+                                <span>Dest: <span className="font-medium text-foreground hover:underline cursor-pointer" onClick={() => state.processingDestBinId && onNavigateToExplorer?.(state.processingDestBinId)}>{destBinName}</span> <span className="text-[10px] bg-muted px-1 rounded-full">{destBinCount}</span></span>
+                                {exceptionBinName && (
+                                    <span>Blocked: <span className="font-medium text-foreground hover:underline cursor-pointer" onClick={() => state.processingExceptionBinId && onNavigateToExplorer?.(state.processingExceptionBinId)}>{exceptionBinName}</span> <span className="text-[10px] bg-muted px-1 rounded-full">{exceptionBinCount}</span></span>
+                                )}
                             </div>
                         </div>
                     ) : (
@@ -1217,7 +1239,9 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                                 <h4 className="font-semibold mb-2">Physical Device</h4>
                                 <div className="space-y-1 text-muted-foreground">
                                     <div className="break-all"><span className="font-medium text-foreground">Label:</span> {state.entities[pendingProcess.deviceId]?.label}</div>
-                                    <div><span className="font-medium text-foreground">IMEI:</span> {state.entities[pendingProcess.deviceId]?.deviceAttributes?.imei || 'N/A'}</div>
+                                    {state.entities[pendingProcess.deviceId]?.deviceAttributes?.imei && (
+                                        <div><span className="font-medium text-foreground">IMEI:</span> {state.entities[pendingProcess.deviceId]?.deviceAttributes?.imei}</div>
+                                    )}
                                     <div><span className="font-medium text-foreground">SKU:</span> {state.entities[pendingProcess.deviceId]?.deviceAttributes?.sku || 'N/A'}</div>
                                 </div>
                             </div>
@@ -1239,6 +1263,15 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
 
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setPendingProcess(null)}>Cancel</Button>
+                        {state.processingExceptionBinId && (
+                            <Button variant="destructive" onClick={() => {
+                                if (pendingProcess) {
+                                    handleExceptionProcess(pendingProcess.deviceId);
+                                }
+                            }}>
+                                Move to Exception
+                            </Button>
+                        )}
                         <Button onClick={() => {
                             if (pendingProcess) {
                                 finalizeProcessing(pendingProcess.deviceId, pendingProcess.result);

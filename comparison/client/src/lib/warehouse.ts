@@ -9,7 +9,8 @@ export type EntityType =
     | 'Bin'
     | 'Box'
     | 'Workstation'
-    | 'Device';
+    | 'Device'
+    | 'Warehouse';
 
 export interface DeviceAttributes {
     sku?: string;
@@ -68,10 +69,12 @@ export interface WarehouseState {
     maxMoveWithoutConfirm: number;
     processingSourceBinId?: string | null;
     processingDestBinId?: string | null;
+    processingExceptionBinId?: string | null;
 }
 
 export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | null)[], icon: string }> = {
-    Department: { allowedParents: [null], icon: 'Building' },
+    Warehouse: { allowedParents: [null], icon: 'Warehouse' },
+    Department: { allowedParents: [null, 'Warehouse'], icon: 'Building' },
     StorageArea: { allowedParents: ['Department'], icon: 'Square' },
     StaticRack: { allowedParents: ['StorageArea'], icon: 'Grid' },
     MobileRack: { allowedParents: ['StorageArea', 'MobileStorageParkingSpot'], icon: 'Truck' },

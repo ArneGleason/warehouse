@@ -14,7 +14,7 @@ const io = new Server(server, {
     }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3011;
 
 app.use(cors());
 app.use(express.json());
@@ -300,7 +300,8 @@ app.post('/api/debug/reset-warehouse', (req, res) => {
             "dept_processing": { "id": "dept_processing", "type": "Department", "label": "Processing", "parentId": "warehouse_root", "children": ["bin_bench"] },
             "bin_dock": { "id": "bin_dock", "type": "Bin", "label": "Dock", "parentId": "dept_receiving", "children": [] },
             "bin_bench": { "id": "bin_bench", "type": "Bin", "label": "Bench", "parentId": "dept_processing", "children": [] }
-        }
+        },
+        roots: ["warehouse_root"]
     };
 
     // Optional: Storage Dept

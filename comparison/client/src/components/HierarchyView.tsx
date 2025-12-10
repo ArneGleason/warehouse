@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useWarehouse } from '@/components/context/WarehouseContext';
-import { ENTITY_CONFIG, WarehouseEntity, EntityType } from '@/lib/warehouse';
+import { ENTITY_CONFIG, WarehouseEntity, EntityType, WarehouseState } from '@/lib/warehouse';
 import { ChevronRight, ChevronDown, Plus, Trash2, GripVertical, Folder, GitBranch, MoreHorizontal, Move, Upload, Settings, Search, X, Filter, Layers, History as HistoryIcon } from 'lucide-react';
 import * as Icons from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,8 +26,8 @@ import { MoveBlockedDialog } from '@/components/MoveBlockedDialog';
 import { MoveConfirmationDialog } from '@/components/MoveConfirmationDialog';
 import { UnboxInPlaceDialog } from '@/components/UnboxInPlaceDialog';
 import { DeleteConfirmationDialog } from '@/components/DeleteConfirmationDialog';
+import { AddDepartmentDialog } from '@/components/AddDepartmentDialog';
 import { HistoryDialog } from '@/components/HistoryDialog';
-import { CheckpointsDialog } from '@/components/CheckpointsDialog';
 import { Switch } from '@/components/ui/switch';
 import { QuickMoveDialog } from '@/components/QuickMoveDialog';
 import { toast } from 'sonner';
@@ -67,6 +67,7 @@ interface VirtualGroupNodeProps {
     onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
     grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
     setUnboxTargetId: (id: string | null) => void;
+    onImport: (id: string) => void;
 }
 
 const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
@@ -88,7 +89,8 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
     onMoveBlocked,
     onMoveRequest,
     grouping,
-    setUnboxTargetId
+    setUnboxTargetId,
+    onImport
 }) => {
     const { state } = useWarehouse();
     // Use a unique ID for the virtual node for expansion state
@@ -208,7 +210,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                             }}
                             selectedIds={selectedIds}
                             searchTerm=""
-                            onImport={() => { }}
+                            onImport={onImport}
                             onDelete={(id) => onDelete(new Set([id]))}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -1041,6 +1043,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             deviceIds={ids}
                             level={level + 1}
                             grouping={grouping}
+                            onImport={onImport}
 
                             onSelect={(ids, e) => {
                                 if (ids instanceof Set) {
@@ -1079,33 +1082,37 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
         }
 
         return (
-            <div>
-                {childrenToRenderDefault.map(childId => (
-                    <HierarchyNode
-                        key={childId}
-                        entityId={childId}
-                        level={level + 1}
-                        onSelect={onSelect}
-                        selectedIds={selectedIds}
-                        searchTerm={searchTerm}
-                        onImport={onImport}
-                        onDelete={onDelete}
-                        expandedIds={expandedIds}
-                        toggleExpansion={toggleExpansion}
-                        onQuickMove={onQuickMove}
-                        grouping={grouping}
-                        dragOverId={dragOverId}
-                        setDragOverId={setDragOverId}
-                        onDragStart={onDragStart}
-                        onDragEnd={onDragEnd}
-                        draggedItems={draggedItems}
-                        activeFilters={activeFilters}
-                        onMoveBlocked={onMoveBlocked}
-                        onMoveRequest={onMoveRequest}
-                        setUnboxTargetId={setUnboxTargetId}
-                    />
-                ))}
-            </div>
+            <>
+                <div>
+                    {childrenToRenderDefault.map(childId => (
+                        <HierarchyNode
+                            key={childId}
+                            entityId={childId}
+                            level={level + 1}
+                            onSelect={onSelect}
+                            selectedIds={selectedIds}
+                            searchTerm={searchTerm}
+                            onImport={onImport}
+                            onDelete={onDelete}
+                            expandedIds={expandedIds}
+                            toggleExpansion={toggleExpansion}
+                            onQuickMove={onQuickMove}
+                            grouping={grouping}
+                            dragOverId={dragOverId}
+                            setDragOverId={setDragOverId}
+                            onDragStart={onDragStart}
+                            onDragEnd={onDragEnd}
+                            draggedItems={draggedItems}
+                            activeFilters={activeFilters}
+                            onMoveBlocked={onMoveBlocked}
+                            onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
+                        />
+                    ))}
+                </div>
+
+
+            </>
         );
     };
 
@@ -1308,15 +1315,23 @@ interface HierarchyViewProps {
 }
 
 export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: HierarchyViewProps) {
-    const { state, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, canUndo, updateConfig, unboxEntities } = useWarehouse();
+    const { state, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, canUndo, updateConfig, unboxEntities, setWarehouseState } = useWarehouse();
     const [searchTerm, setSearchTerm] = useState('');
     // grouping state moved to props
     const [importTargetId, setImportTargetId] = useState<string | null>(null);
+
+    const handleSetImportTargetId = (id: string | null) => {
+        if (id) {
+            console.log('[HierarchyView] Setting import target ID:', id);
+        }
+        setImportTargetId(id);
+    };
+
     const [deleteTargetIds, setDeleteTargetIds] = useState<Set<string> | null>(null);
     const [unboxTargetId, setUnboxTargetId] = useState<string | null>(null);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-    const [isCheckpointsOpen, setIsCheckpointsOpen] = useState(false);
-    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['warehouse-root'])); // Default expand root
+    const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['warehouse_root'])); // Default expand root
     const [quickMoveIds, setQuickMoveIds] = useState<Set<string> | null>(null);
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -1352,7 +1367,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                     // Check if all items are from the same parent
                     const allSameParent = draggedIds.every(id => state.entities[id]?.parentId === firstItem.parentId);
                     sourceName = allSameParent ? parent.label : 'Various Locations';
-                } else if (firstItem.parentId === 'warehouse-root') {
+                } else if (firstItem.parentId === 'warehouse_root') {
                     sourceName = 'Warehouse Root';
                 }
             }
@@ -1413,6 +1428,68 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
             setMoveConfirmationInfo(null);
         }
     };
+
+    // Data Management Features
+    const handleClearData = () => {
+        // Create an empty state (preserving only roots structure if needed, or total reset)
+        // Check server roots implementation. Context handles initialization.
+        // We will reset to a clean state with just the root.
+        const cleanState: WarehouseState = {
+            entities: {},
+            roots: ['warehouse_root'], // Keep consistent with fix
+            configTitle: 'Untitled Layout',
+            maxMoveWithoutConfirm: 1,
+            processingSourceBinId: null,
+            processingDestBinId: null
+        };
+        // Add default root entity if it doesn't exist?
+        // Actually the backend 'reset-warehouse' does this.
+        // But for client-side clear, we just empty entities.
+        setWarehouseState(cleanState);
+        toast.success('Warehouse data cleared');
+    };
+
+    const handleSaveData = () => {
+        const dataStr = JSON.stringify(state, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `warehouse_data_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast.success('Data saved to file');
+    };
+
+    const handleLoadData = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const json = JSON.parse(event.target?.result as string);
+                // Basic validation
+                if (!json.entities || !json.roots) {
+                    throw new Error('Invalid file format: missing entities or roots');
+                }
+                setWarehouseState(json);
+                toast.success('Data loaded successfully');
+            } catch (error) {
+                console.error('Load Error:', error);
+                toast.error('Failed to load data: Invalid file');
+            }
+        };
+        reader.readAsText(file);
+        // Reset input
+        e.target.value = '';
+    };
+
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
+
 
     const availableFilters = [
         { id: 'sellable', label: 'Processed' },
@@ -1738,9 +1815,6 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setIsHistoryOpen(true)} title="Action History">
                             <HistoryIcon className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setIsCheckpointsOpen(true)} title="Version Checkpoints">
-                            <GitBranch className="h-4 w-4" />
-                        </Button>
                         <Button
                             size="icon"
                             variant="ghost"
@@ -1751,19 +1825,49 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                         >
                             <Icons.Undo2 className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
-                            addEntity('Department', null);
-                            toast.success('Added new Department');
-                        }} title="Add Department">
-                            <Plus className="h-4 w-4" />
-                        </Button>
+
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost" className="h-6 w-6" title="Settings">
-                                    <Settings className="h-4 w-4" />
+                                <Button size="icon" variant="ghost" className="h-6 w-6">
+                                    <Icons.MoreVertical className="h-4 w-4" />
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-64">
+                            <DropdownMenuContent align="end" className="w-56">
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                    Actions
+                                </div>
+
+                                <DropdownMenuItem onSelect={() => setIsAddDeptOpen(true)}>
+                                    <Icons.Plus className="h-4 w-4 mr-2" />
+                                    Add Department
+                                </DropdownMenuItem>
+
+                                <div className="my-1 h-px bg-muted" />
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                    Data Management
+                                </div>
+
+                                <DropdownMenuItem onClick={handleSaveData}>
+                                    <Icons.Download className="h-4 w-4 mr-2" />
+                                    Save Data
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                                    <Icons.Upload className="h-4 w-4 mr-2" />
+                                    Load Data
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                    onClick={() => setIsClearDialogOpen(true)}
+                                    className="text-destructive focus:text-destructive"
+                                >
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    Clear Data
+                                </DropdownMenuItem>
+
+                                <div className="my-1 h-px bg-muted" />
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                                    Settings
+                                </div>
+
                                 <div className="flex items-center justify-between px-2 py-2">
                                     <Label htmlFor="single-bin-mode" className="text-sm font-medium">Single Bin Expansion</Label>
                                     <Switch
@@ -1772,7 +1876,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                                         onCheckedChange={setSingleBinExpansion}
                                     />
                                 </div>
-                                <div className="px-2 py-2 space-y-2 border-t">
+                                <div className="px-2 py-2 space-y-2">
                                     <div className="flex items-center justify-between">
                                         <Label htmlFor="always-confirm" className="text-sm font-medium">Always Confirm Moves</Label>
                                         <Switch
@@ -1781,29 +1885,38 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                                             onCheckedChange={(checked) => updateConfig({ maxMoveWithoutConfirm: checked ? 0 : 1 })}
                                         />
                                     </div>
-                                    <div className="space-y-1">
-                                        <Label htmlFor="max-move" className={cn("text-sm font-medium", maxMoveWithoutConfirm === 0 && "text-muted-foreground")}>
-                                            Max Move w/o Confirm
-                                        </Label>
-                                        <Input
-                                            id="max-move"
-                                            type="number"
-                                            min="0"
-                                            value={maxMoveWithoutConfirm === 0 ? '' : maxMoveWithoutConfirm}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value);
-                                                if (!isNaN(val) && val > 0) {
-                                                    updateConfig({ maxMoveWithoutConfirm: val });
-                                                }
-                                            }}
-                                            disabled={maxMoveWithoutConfirm === 0}
-                                            placeholder={maxMoveWithoutConfirm === 0 ? "Always Confirm" : ""}
-                                            className="h-8"
-                                        />
-                                    </div>
+                                    {maxMoveWithoutConfirm !== 0 && (
+                                        <div className="space-y-1">
+                                            <Label htmlFor="max-move" className="text-sm font-medium">
+                                                Max items w/o Confirm
+                                            </Label>
+                                            <Input
+                                                id="max-move"
+                                                type="number"
+                                                min="1"
+                                                value={maxMoveWithoutConfirm}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value);
+                                                    if (!isNaN(val) && val > 0) {
+                                                        updateConfig({ maxMoveWithoutConfirm: val });
+                                                    }
+                                                }}
+                                                className="h-8"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </DropdownMenuContent>
                         </DropdownMenu>
+
+                        {/* Hidden File Input for Load */}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            className="hidden"
+                            accept=".json"
+                            onChange={handleLoadData}
+                        />
                     </div>
                 </div>
                 <div className="relative">
@@ -1932,7 +2045,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             onSelect={handleNodeClick}
                             selectedIds={selectedIds}
                             searchTerm={searchTerm}
-                            onImport={setImportTargetId}
+                            onImport={handleSetImportTargetId}
                             onDelete={handleDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -2010,14 +2123,31 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                 />
             )}
 
+            <DeleteConfirmationDialog
+                isOpen={isClearDialogOpen}
+                onClose={() => setIsClearDialogOpen(false)}
+                onConfirm={handleClearData}
+                entityName="ALL DATA"
+            />
+
             <HistoryDialog
                 isOpen={isHistoryOpen}
                 onClose={() => setIsHistoryOpen(false)}
             />
 
-            <CheckpointsDialog
-                isOpen={isCheckpointsOpen}
-                onClose={() => setIsCheckpointsOpen(false)}
+            <AddDepartmentDialog
+                isOpen={isAddDeptOpen}
+                onClose={() => setIsAddDeptOpen(false)}
+                onConfirm={(name) => {
+                    const parentId = state.roots.length > 0 ? state.roots[0] : null; // Safe default even if null didn't work previously, forcing root[0] usually works for visibility
+                    // Wait, logic earlier suggested null is safer? 
+                    // Let's use roots[0] because it puts it inside the visible tree usually.
+                    // But if roots is empty... null adds to roots.
+                    // Let's stick to null for now, or revert logic if failure persists.
+                    // Actually, let's try parentId = null first to be clean.
+                    addEntity('Department', null, { label: name });
+                    toast.success(`Added Department: ${name}`);
+                }}
             />
 
             {quickMoveIds && (

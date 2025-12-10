@@ -15,19 +15,22 @@ export function ProcessingSettingsDialog({ isOpen, onClose }: ProcessingSettings
     const { state, updateConfig } = useWarehouse();
     const [sourceBinId, setSourceBinId] = useState<string>('');
     const [destBinId, setDestBinId] = useState<string>('');
+    const [exceptionBinId, setExceptionBinId] = useState<string>('');
 
     // Load initial values from state
     useEffect(() => {
         if (isOpen) {
             setSourceBinId(state.processingSourceBinId || '');
             setDestBinId(state.processingDestBinId || '');
+            setExceptionBinId(state.processingExceptionBinId || '');
         }
-    }, [isOpen, state.processingSourceBinId, state.processingDestBinId]);
+    }, [isOpen, state.processingSourceBinId, state.processingDestBinId, state.processingExceptionBinId]);
 
     const handleSave = () => {
         updateConfig({
             processingSourceBinId: sourceBinId || null,
-            processingDestBinId: destBinId || null
+            processingDestBinId: destBinId || null,
+            processingExceptionBinId: exceptionBinId || null
         });
         toast.success("Processing settings updated");
         onClose();
@@ -105,12 +108,32 @@ export function ProcessingSettingsDialog({ isOpen, onClose }: ProcessingSettings
                             Successfully processed devices will be moved to this bin.
                         </p>
                     </div>
+
+
+                    <div className="space-y-2">
+                        <Label htmlFor="exception-bin">Blocked Bin (Exceptions Requiring Correction)</Label>
+                        <Select value={exceptionBinId} onValueChange={setExceptionBinId}>
+                            <SelectTrigger id="exception-bin">
+                                <SelectValue placeholder="Select a bin..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {binOptions.map(bin => (
+                                    <SelectItem key={bin.id} value={bin.id}>
+                                        {bin.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-[10px] text-muted-foreground">
+                            Devices flagged as exceptions will be moved to this bin.
+                        </p>
+                    </div>
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>
                     <Button onClick={handleSave}>Save Changes</Button>
                 </DialogFooter>
-            </DialogContent>
-        </Dialog>
+            </DialogContent >
+        </Dialog >
     );
 }
