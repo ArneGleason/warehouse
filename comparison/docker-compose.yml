@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "3011:3001"
+    volumes:
+      - warehouse_comparison_data:/app/data
+    environment:
+      - PORT=3001
+    restart: always
+
+  client:
+    build: ./client
+    ports:
+      - "3010:3000"
+    environment:
+      - NEXT_PUBLIC_SERVER_URL=http://localhost:3011
+      - PORT=3000
+    depends_on:
+      - server
+    restart: always
+
+volumes:
+  warehouse_comparison_data:
