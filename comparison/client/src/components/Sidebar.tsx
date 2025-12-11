@@ -1,11 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Database, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
-    currentView: 'explorer' | 'processing';
-    onViewChange: (view: 'explorer' | 'processing') => void;
+    currentView: 'explorer' | 'processing' | 'items';
+    onViewChange: (view: 'explorer' | 'processing' | 'items') => void;
 }
 
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
@@ -26,6 +26,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 title="Processing"
             >
                 <ClipboardList className="h-6 w-6" />
+            </Button>
+            <Button
+                variant={currentView === 'items' ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={() => onViewChange('items')}
+                title="Items Master"
+            >
+                <Database className="h-6 w-6" />
             </Button>
         </div>
     );

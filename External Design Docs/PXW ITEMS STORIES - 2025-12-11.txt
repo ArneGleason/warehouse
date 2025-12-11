@@ -1,0 +1,463 @@
+PXW ITEMS - Items list view
+Story
+As a Warehouse admin or supervisor I want to view and search all inventory SKUs in an items list So that I can quickly find items and see their key attributes before drilling into details
+
+Acceptance Criteria
+AC A — Load Items List (inventory SKUs only)
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN I have permission to manage Item Master inventory
+	•	WHEN I open the Items List page
+	•	Shows page title “Items” and the Items List header region (search, filter chips, add/import/export actions)
+	•	Shows a primary “Add New Item” button and secondary “Import” and “Export” buttons
+	•	Shows filter chips for CATEGORY and SERIALIZED?, each defaulted to ALL (no filter applied)
+	•	Shows a table of inventory items (quantity-tracked SKUs only; charge-only SKUs are not listed here)
+	•	Each row shows:
+	•	Item section with SKU (Item #), description text, and an Edit icon
+	•	Required attributes section (e.g., Category, Serialized?, Manufacturer, Model, Grade, Capacity, Color, Band, Carrier) in a fixed, consistent column order
+	•	Optional attributes section (columns for any configured optional attributes, which may be blank per item)
+	•	Status column (e.g., “Active”, “Inactive”)
+	•	Shows a checkbox column with:
+	•	A header checkbox to select/deselect all visible rows
+	•	A checkbox on each row for selecting that item
+	•	Shows “Update Selected Items” control when 1+ rows are checked (click behavior is out of scope for this story)
+
+AC B — Search by Description (default mode)
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN the Items List is loaded and the search mode is set to “Description”
+	•	WHEN I enter a search term (e.g., iPad Mini) and apply the search
+	•	Filters the table to items whose description contains the term (case-insensitive, partial match)
+	•	Keeps existing filter chips (e.g., Category, Serialized?) applied in combination with the search term
+	•	Shows an empty-state message if no items match the current search + filters
+	•	Does not alter any selected filter chip values
+
+AC C — Search by Item # / SKU list
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN the Items List is loaded and I have switched the search mode to “Item # / SKU list”
+	•	WHEN I paste or type a list of item numbers (comma-, space-, or line-separated) and apply the search
+	•	Parses the input into distinct SKU values, ignoring extra whitespace
+	•	Filters the table to items whose SKU exactly matches one of the parsed values
+	•	Ignores invalid/nonexistent SKUs in the input (they do not cause an error; they simply do not appear in results)
+	•	Keeps existing filter chips (e.g., Category, Serialized?) applied in combination with the SKU list
+	•	Shows an empty-state message if no items match the current SKU list + filters
+
+AC D — Category & Serialized filter chips
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN the Items List is loaded with default filters (CATEGORY: ALL, SERIALIZED?: ALL)
+	•	WHEN I change CATEGORY from ALL to a specific category (e.g., Tablet)
+	•	Filters the table to only items in the chosen category
+	•	Shows the chosen category label on the chip
+	•	Maintains the current search term/mode and Serialized? filter as part of the effective filter set
+	•	WHEN I change SERIALIZED? from ALL to YES or NO
+	•	Filters the table to only items with the matching Serialized flag
+	•	Shows the chosen value on the chip (e.g., YES, NO)
+	•	Maintains the current search term/mode and Category filter as part of the effective filter set
+	•	WHEN no items match the current chip combination
+	•	Shows an empty-state message and keeps the chip selections visible
+(Note: additional filter chips may be added in future stories; this story covers Category and Serialized? only.)
+
+AC E — Clear search & filters
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN I have any combination of search term, search mode, and filter chips applied
+	•	WHEN I click the “Clear” control in the header
+	•	Clears the current search term and resets the search input to its default empty state
+	•	Resets the Category and Serialized? chips back to ALL
+	•	Resets the table to show the full inventory items list (no search, no filters)
+	•	Leaves the current page/sort and row selections cleared (no rows selected)
+
+DESIGN
+
+PXW / Items list 
+
+PXW ITEMS - Create new inventory item
+Story
+As a warehouse admin or supervisor I want to create a new inventory item (SKU) with required and optional attributes So that it can be used consistently across POs and warehouse operations
+
+Acceptance Criteria
+AC A — Navigate to “Add New Item” (Create mode)
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN I have permission to manage Item Master inventory
+	•	WHEN I click the Add New Item primary button
+	•	Navigates to the Item Details – [NEW] page, INFO tab selected
+	•	Shows a “back” chevron in the header that returns to the Items List
+	•	Shows page title “Item Details” with a description placeholder area (e.g., “[description will follow rules in settings]”)
+	•	Shows tab strip with:
+	•	INFO tab active
+	•	VENDOR SKUS tab visible but disabled (or not selectable) with count 0
+	•	Shows footer actions: Cancel and Save Changes, with Save Changes disabled on initial load
+
+AC B — Default state of the Create form
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN I have just opened the Create page
+	•	WHEN the form loads
+	•	SKU (Item #) field is empty and editable, with helper text indicating it cannot be changed once created
+	•	Shows an AUTO NUMBER button next to the SKU field (Create mode only)
+	•	Required attributes section is present with the fields (per current configuration):
+	•	Category (dropdown)
+	•	Manufacturer
+	•	Model
+	•	Grade (dropdown, includes RAW for no grade)
+	•	Serialized (On/Off switch with helper text “On: each item has a serial. Off: track only total quantity”)
+	•	Optional attributes section is present with helper text “categories may have different optional attributes – see settings” and no values selected yet
+	•	Active/Inactive selector defaults to Active, with note “Items will not appear in selection lists” displayed when Inactive is chosen
+	•	The description placeholder remains static until item data is sufficient to compute a description (per settings rules)
+
+AC C — Auto-number SKU
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN auto-numbering is configured in settings
+	•	WHEN I click AUTO NUMBER and the SKU field is currently empty
+	•	System generates the next available SKU according to the configured auto-numbering rules
+	•	Generated SKU is unique among all existing items
+	•	Generated SKU is populated into the SKU (Item #) field
+	•	Save state is re-evaluated (Save remains disabled until all required fields are valid)
+	•	WHEN auto-numbering fails because configuration is missing or a unique SKU cannot be generated
+	•	Leaves the SKU field unchanged
+	•	Shows a non-blocking error message indicating that auto-numbering failed and that I can enter a SKU manually
+
+AC D — Manual SKU entry & uniqueness validation
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN I am creating a new item
+	•	WHEN I manually type a value into SKU (Item #)
+	•	The value is treated as the item’s ID for this item once saved
+	•	Basic validation applies (e.g., not blank, no forbidden characters per global SKU rules)
+	•	WHEN I attempt to save a new item with a SKU that already exists for another item
+	•	The save is rejected
+	•	An inline error message is shown on the SKU field indicating the SKU must be unique
+	•	The form remains on the Create page with all other entered values preserved
+	•	AND once this item is successfully created
+	•	The SKU value is stored as immutable (cannot be changed on subsequent edits of this item; enforcement will be verified in the Edit story)
+
+AC E — Required & optional attributes behavior
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN the form is loaded
+	•	WHEN I interact with Category
+	•	I can only select from categories configured in Settings (no inline creation of new categories)
+	•	Changing Category refreshes the set of optional attributes shown to those configured for the new category
+	•	Any optional attribute values that are no longer valid for the new category are cleared
+	•	WHEN I set Manufacturer or Model
+	•	I can pick from existing values (case-insensitive matching)
+	•	I can also create a new Manufacturer or Model inline (e.g., by typing a new value and confirming)
+	•	Matching and storage is case-insensitive (e.g., “apple” matches “Apple”)
+	•	WHEN I set Grade
+	•	I must pick from the list of grades configured in Settings (including RAW when there is no grade)
+	•	I cannot create new grades inline
+	•	WHEN I set Capacity and Color
+	•	I can pick from existing values or create new values inline (consistent with current attribute design)
+	•	WHEN I set Optional Attributes
+	•	I see only the attribute fields configured for the selected Category
+	•	For each optional attribute, I can pick from existing values or create a new value inline
+	•	Optional attributes may remain blank; they are not required to save
+	•	Validation:
+	•	To enable Save Changes, at minimum the following must be valid and non-empty:
+	•	SKU (Item #)
+	•	Category
+	•	Manufacturer
+	•	Model
+	•	Grade
+	•	Any missing required field keeps Save Changes disabled and surfaces an inline error once the field has been touched/blurred
+
+AC F — Serialized switch
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN the Serialized switch is visible with helper text “On: each item has a serial. Off: track only total quantity”
+	•	WHEN I toggle the Serialized switch to On
+	•	The item will be created as serialized (inventory must be tracked with individual serials in downstream flows)
+	•	WHEN I toggle the Serialized switch to Off
+	•	The item will be created as non-serialized (inventory can be tracked by quantity only)
+	•	AND:
+	•	Serialized has a valid default (e.g., Off) so it does not block enabling of Save Changes once all other required fields are valid
+	•	The current Serialized value is saved and will be respected wherever this item is used in the warehouse
+
+AC G — Active / Inactive setting
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN the Active/Inactive selector is visible
+	•	WHEN I leave the default as Active and save
+	•	The item is created as Active and is eligible to appear in item selection lists (e.g., when creating POs, assigning inventory, etc.)
+	•	WHEN I choose Inactive before saving
+	•	The item is created as Inactive
+	•	Inactive items do not appear in item-selection lists for new transactions (per note: “Items will not appear in selection lists”)
+	•	The item record still exists and can be managed from the Items List / Item Details (e.g., later re-activated or inspected; detailed behavior may be covered in a future story)
+
+AC H — Description preview
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN a description pattern has been defined in Settings
+	•	WHEN I populate the SKU and required attributes (and optional attributes, as relevant to the pattern)
+	•	The description preview area updates to show the computed description based on the configured rules (e.g., Manufacturer + Model + Capacity + Color + Grade)
+	•	The preview is read-only on this page (i.e., it is derived, not directly editable)
+	•	WHEN required fields are incomplete or the pattern cannot be applied
+	•	The placeholder text remains, or the description preview indicates that more information is required per settings
+
+AC I — Save new item (success) & navigation
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN SKU is unique and all required fields are valid
+	•	WHEN I click Save Changes
+	•	The system creates the new item with all the provided values (SKU, attributes, Serialized, Active/Inactive, etc.)
+	•	I am returned to the Items List page
+	•	The newly created item appears in the Items List according to the current filters (e.g., it may not appear if filters exclude it or if it was created as Inactive)
+	•	(For future Edit story) The new item now has a non-editable SKU and an enabled VENDOR SKUS tab
+
+AC J — Cancel / Back
+	•	IN Item Details – [NEW], INFO tab
+	•	GIVEN I am on the Create page with or without unsaved changes
+	•	WHEN I click the header back chevron
+	•	I am returned to the Items List page
+	•	No new item is created and all unsaved changes are discarded
+	•	WHEN I click Cancel
+	•	Same behavior as the back chevron: return to Items List and discard unsaved changes
+
+Design
+Item Details - CREATE - INFO tad view (default) 
+
+PXW ITEMS - Edit existing inventory item
+Story
+As a warehouse admin or supervisor I want to edit the attributes and status of an existing inventory item So that I can keep item definitions accurate without changing its core SKU
+
+Acceptance Criteria
+AC A — Open existing item in Edit mode
+	•	IN PX Warehouse – Item Master / Items List
+	•	GIVEN I have permission to manage Item Master inventory
+	•	WHEN I click the Edit control for an item row (or equivalent row action)
+	•	Navigates to Item Details – {SKU} in Edit mode
+	•	Shows header text Item Details – {SKU} (e.g., Item Details – 21697ABC) with the computed description line beneath (e.g., Apple • iPadMini4 • 16GB • Blueish • AT&T • Locked • New)
+	•	Shows a back chevron that returns to the Items List
+	•	Shows tabs:
+	•	INFO tab selected
+	•	VENDOR SKUS tab enabled and displaying the current count (e.g., VENDOR SKUS 0)
+	•	Shows footer actions: Cancel and Save Changes, with Save Changes initially disabled until changes are made
+
+AC B — SKU is visible but immutable
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN I have opened an existing item in Edit mode
+	•	WHEN the INFO tab loads
+	•	The item’s SKU (Item #) is shown (same value as on the Items List)
+	•	The SKU field is read-only/disabled; I cannot change or clear it
+	•	No AUTO NUMBER button is shown in Edit mode
+	•	AND at all times in Edit mode:
+	•	There is no path in the UI to modify the SKU value for this item
+(Note: SKU immutability was established at creation and is enforced in Edit.)
+
+AC C — Required & optional attributes pre-populated
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN the item already exists
+	•	WHEN the INFO tab loads
+	•	The Category field is populated with the item’s current category (e.g., Tablets)
+	•	Required attributes are populated with existing values (e.g., Manufacturer: Apple, Model: iPadMini4, Grade: NEW, Capacity: 16GB, Color: Blueish)
+	•	The Serialized switch reflects the stored state and shows helper text On: each item has a serial. Off: track only total quantity
+	•	Optional Attributes section is visible with text Optional Attributes (categories may have different optional attributes – see settings) and all optional-attribute fields populated with existing values or left blank if none
+	•	Active/Inactive selection reflects the current status, with note Items will not appear in selection lists when Inactive is selected
+
+AC D — Editing attributes & description preview
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN the item is loaded in Edit mode
+	•	WHEN I change any of the editable fields (Category, Manufacturer, Model, Grade, Capacity, Color, Serialized, optional attributes, Active/Inactive, etc.)
+	•	The edited field accepts valid values according to the same rules as Create:
+	•	Category: select from existing categories defined in Settings (no inline creation)
+	•	Manufacturer/Model/Capacity/Color: pick from existing or create new values inline (case-insensitive matching)
+	•	Grade: pick from configured grades in Settings (no inline grade creation; RAW used when no grade)
+	•	Optional attributes: show fields for attributes configured for the current Category; allow pick from existing or create new values inline
+	•	Any change marks the form as “dirty” and enables Save Changes if the item remains valid
+	•	The description line under the header is recomputed based on the settings rules whenever relevant fields change (e.g., Manufacturer, Model, Capacity, Color, Grade)
+	•	Validation:
+	•	The same required-fields rules as Create apply: SKU (pre-filled), Category, Manufacturer, Model, Grade, Capacity, and Color must be valid and non-empty
+	•	If a required field is cleared or set to an invalid value, Save Changes becomes disabled (or is prevented on click) and an inline error is shown for that field after it is touched/blurred
+
+AC E — Serialized switch in edit
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN the Serialized switch is present with helper text On: each item has a serial. Off: track only total quantity
+	•	WHEN I toggle Serialized from Off → On or On → Off and save
+	•	The item’s serialization setting is updated and persisted for downstream warehouse behavior
+	•	AND business rules about changing serialization for items with existing inventory (e.g., whether such a change is allowed or requires preconditions) are enforced consistently with global inventory rules (details may be covered in separate stories/validations).
+
+AC F — Active / Inactive with usage constraints
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN the item may already be used in inventory or historical transactions
+	•	WHEN I set the item to Inactive and attempt to save
+	•	IF business rules allow inactivation (e.g., no active inventory or open dependencies exist)
+	•	The item status is updated to Inactive
+	•	The item will no longer appear in selection lists for new transactions (per the note under the control)
+	•	IF business rules do not allow inactivation (e.g., active inventory exists, or other blocking conditions)
+	•	The save is rejected
+	•	A clear error message is shown explaining why the item cannot be set to Inactive
+	•	The status remains Active and the user stays on the Edit page with other changes preserved
+
+AC G — Save edits (success) & navigation
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN I have made one or more valid changes and all required fields remain valid
+	•	WHEN I click Save Changes
+	•	The system updates the existing item record with all edited values
+	•	The SKU remains unchanged
+	•	The description line (derived from attributes) is persisted as per settings
+	•	I am returned to the Items List page
+	•	The edited item’s values are reflected in the Items List (subject to current search/filters; it may not be visible if filters exclude it)
+
+AC H — Cancel / Back in edit mode
+	•	IN Item Details – Edit, INFO tab
+	•	GIVEN I am editing an existing item
+	•	WHEN I click the back chevron
+	•	Navigates back to the Items List
+	•	Unsaved changes are discarded
+	•	WHEN I click Cancel
+	•	Behaves the same as the back chevron: returns to Items List and discards unsaved changes
+(Confirmation prompts for unsaved changes, if required, can be handled in a separate reusable story/pattern.)
+
+AC I — Vendor SKUs tab availability
+	•	IN Item Details – Edit
+	•	GIVEN the item already exists (i.e., we are not in Create mode)
+	•	WHEN the header is displayed
+	•	The VENDOR SKUS tab is enabled and shows the current count of vendor SKUs associated to this item (e.g., VENDOR SKUS 0)
+	•	WHEN I click VENDOR SKUS
+	•	The view switches from INFO to the Vendor SKUs view for this item
+	•	I can see that there are currently no Vendor SKUs if none exist (exact UI behavior covered in the Vendor SKUs story)
+
+Design
+PXW / Item Details - EDIT - INFO tab view (default)
+
+
+PXW ITEMS - Manage Vendor SKUs for an item
+Story
+As a warehouse admin or supervisor I want to manage vendor-specific SKUs for an item So that buyers can reference vendor SKUs on POs and the system can resolve them to the correct item
+
+Acceptance Criteria
+AC A — Navigate to Vendor SKUs tab for an item
+	•	IN PX Warehouse – Item Master / Item Details (Edit mode)
+	•	GIVEN I have opened an existing item
+	•	WHEN I click the VENDOR SKUS tab in the Item Details header
+	•	The view switches from INFO to the Vendor SKUs tab
+	•	The tab label shows the current count of vendor SKUs for this item (e.g., VENDOR SKUS 2)
+	•	The header still shows:
+	•	Item Details – {SKU}
+	•	The item description line under the title
+	•	The Vendor SKUs content area shows:
+	•	NEW VENDOR SKU primary button
+	•	IMPORT and EXPORT controls
+	•	A text search box
+	•	A STATUS: ALL filter chip and a CLEAR control
+
+AC B — Vendor SKU list layout & columns
+	•	IN Item Details – VENDOR SKUs tab
+	•	GIVEN the item has one or more vendor SKUs
+	•	WHEN the tab loads
+	•	A table is shown with one row per Vendor SKU record for this item
+	•	Each row includes the following columns (in this order):
+	•	Vendor (vendor name)
+	•	Vendor ID (internal/vendor account identifier)
+	•	Vendor SKU (the vendor’s SKU string for this item)
+	•	Created (date the Vendor SKU record was created for this item)
+	•	POs (integer count of POs where this exact Vendor SKU record has been used)
+	•	Status (Active / Inactive)
+	•	The header row labels these columns exactly (or per final UI copy)
+	•	There is a selection checkbox column with:
+	•	A header checkbox (select/deselect all visible rows)
+	•	A checkbox per row
+	•	The footer area shows “N Items Selected” and an UPDATE STATUS control when 1+ rows are selected
+
+AC C — Search & Status filter
+	•	IN Item Details – VENDOR SKUs tab
+	•	GIVEN there are one or more Vendor SKUs for the item
+	•	WHEN I type text into the Search field and apply search
+	•	Filters the table rows using a case-insensitive substring match on:
+	•	Vendor name
+	•	Vendor ID
+	•	Vendor SKU
+	•	Status filter still applies in combination with the search term
+	•	Shows an empty-state message if no Vendor SKUs match the current search + filter
+	•	WHEN I change the STATUS chip from ALL to ACTIVE
+	•	Shows only Vendor SKUs whose Status is Active
+	•	Works in combination with the current search term (if any)
+	•	WHEN I change the STATUS chip from ALL to INACTIVE
+	•	Shows only Vendor SKUs whose Status is Inactive
+	•	Works in combination with the current search term (if any)
+	•	WHEN I click CLEAR
+	•	Clears the search text
+	•	Resets STATUS back to ALL
+	•	Shows the full Vendor SKUs list for this item
+
+AC D — New Vendor SKU dialog (Create)
+	•	IN Item Details – VENDOR SKUs tab
+	•	GIVEN I want to add a new vendor SKU for this item
+	•	WHEN I click NEW VENDOR SKU
+	•	A modal dialog opens (no navigation away from Item Details) with:
+	•	Title: “New Vendor SKU”
+	•	Short helper text explaining that this links a vendor and vendor SKU to this item
+	•	A Vendor picker (required)
+	•	A Vendor SKU text field (required)
+	•	Optional helper text or info about typical vendor SKU formats
+	•	Buttons: Cancel and Save (Save disabled until required fields are valid)
+	•	The Vendor field allows selecting from existing vendors in the system (no inline vendor creation in this story)
+	•	Vendor selection may display both vendor name and ID so it’s clear which vendor is chosen
+	•	WHEN I click Cancel
+	•	The dialog closes
+	•	No Vendor SKU is created
+
+AC E — New Vendor SKU validation, uniqueness & creation
+	•	IN New Vendor SKU dialog
+	•	GIVEN the dialog is open
+	•	WHEN I fill in:
+	•	Vendor (required)
+	•	Vendor SKU (required, non-empty, respects any global SKU/ID character rules)
+	•	And click Save
+	•	THEN, if validation passes:
+	•	A new Vendor SKU record is created for this item
+	•	The record stores:
+	•	Vendor reference (Vendor + Vendor ID)
+	•	Vendor SKU string
+	•	Created date set to the current date/time (displayed as date in the list)
+	•	POs count initialized to 0
+	•	Status defaulted to Active
+	•	The dialog closes and the Vendor SKUs table refreshes, showing the new row
+	•	Uniqueness rule:
+	•	WHEN I attempt to save a Vendor SKU where the combination of (Vendor, Vendor SKU) already exists for this same item
+	•	The save is rejected
+	•	An inline error is shown indicating that this Vendor + Vendor SKU pair already exists for the item
+	•	The dialog remains open with my inputs preserved
+
+AC F — Edit existing Vendor SKU
+	•	IN Item Details – VENDOR SKUs tab
+	•	GIVEN at least one Vendor SKU row exists
+	•	WHEN I choose to edit a Vendor SKU (e.g., via row action “Edit” or row click, per UX pattern)
+	•	Opens a modal dialog similar to New Vendor SKU but in Edit mode
+	•	Dialog fields are pre-populated with the existing Vendor and Vendor SKU values
+	•	Status and POs count are displayed as read-only context, or clearly not editable in this dialog (status changes handled via Update Status; POs is always read-only)
+	•	WHEN I change the Vendor and/or Vendor SKU and click Save
+	•	Same validation and uniqueness rules as in Create apply
+	•	On success, the Vendor SKU record is updated
+	•	The dialog closes and the Vendor SKUs table refreshes with updated values
+	•	WHEN I click Cancel in Edit mode
+	•	The dialog closes
+	•	No changes are saved
+
+AC G — Row selection & bulk status update
+	•	IN Item Details – VENDOR SKUs tab
+	•	GIVEN one or more Vendor SKUs are displayed
+	•	WHEN I select rows using the checkboxes (or header checkbox)
+	•	The footer shows “N Items Selected” for the selected rows
+	•	The UPDATE STATUS control becomes enabled
+	•	WHEN I click UPDATE STATUS
+	•	A simple control (e.g., small dialog or dropdown) lets me set all selected Vendor SKUs to Active or Inactive
+	•	On confirmation, each selected Vendor SKU’s Status is updated accordingly
+	•	The table refreshes; if the STATUS chip is set to a filter that excludes the new status, affected rows may disappear from view as expected
+	•	Note:
+	•	Updating status (Active/Inactive) does not change Created date or POs count
+
+AC H — Created date & POs count behavior
+	•	Created date
+	•	Set once on creation of a Vendor SKU record
+	•	Not editable through the UI
+	•	Displayed in the Created column in a consistent date format (e.g., YYYY-MM-DD)
+	•	POs count
+	•	Displays the number of POs that have used this specific Vendor SKU record (not just the vendor or item in general)
+	•	Automatically increases as new POs using this Vendor SKU are created (and possibly decreases if POs are canceled/removed per PO business rules; details handled in PO stories)
+	•	Always read-only in the Vendor SKUs UI
+
+AC I — Import & Export controls (surface only)
+	•	IN Item Details – VENDOR SKUs tab
+	•	WHEN the tab loads
+	•	An EXPORT control is visible near the top, associated with Vendor SKUs for this item
+	•	An IMPORT control is visible alongside NEW VENDOR SKU
+	•	WHEN I click EXPORT
+	•	The system triggers the standard export behavior for this item’s Vendor SKU list (exact format and flow to be defined in a separate story)
+	•	WHEN I click IMPORT
+	•	The system launches the standard import workflow for Vendor SKUs (template, validation, etc., defined in a separate Import story)
+
+Design
+PXW / Item Details - VENDOR SKUS tab view
+
+

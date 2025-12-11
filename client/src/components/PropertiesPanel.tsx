@@ -48,7 +48,8 @@ import { MoveBlockedDialog } from '@/components/MoveBlockedDialog';
 import { MoveConfirmationDialog } from '@/components/MoveConfirmationDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BoxInPlaceDialog } from '@/components/BoxInPlaceDialog';
-import { UnboxInPlaceDialog } from '@/components/UnboxInPlaceDialog';
+import { UnboxInPlaceDialog } from './UnboxInPlaceDialog';
+import { BulkEditDialog } from './BulkEditDialog';
 import { v4 as uuidv4 } from 'uuid';
 
 interface InventoryItem {
@@ -151,7 +152,7 @@ function InventoryTable({ data }: { data: InventoryItem[] }) {
                             </TableHead>
                             <TableHead className="text-right cursor-pointer hover:bg-muted/50 select-none" onClick={() => handleSort('onHandSellable')}>
                                 <div className="flex items-center justify-end gap-1">
-                                    Sellable
+                                    Processed
                                     {sortConfig?.key === 'onHandSellable' && (sortConfig.direction === 'asc' ? <Icons.ArrowUp className="h-3 w-3" /> : <Icons.ArrowDown className="h-3 w-3" />)}
                                 </div>
                             </TableHead>
@@ -272,7 +273,7 @@ function HistoryTable({ entityId }: { entityId: string }) {
 
 interface PropertiesPanelProps {
     selectedIds: Set<string>;
-    grouping: 'none' | 'po' | 'sku';
+    grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
     onSelect?: (ids: Set<string>) => void;
 }
 
@@ -600,7 +601,7 @@ function QueueDeviceList({ devices, onSelect }: { devices: WarehouseEntity[], on
                                     <Badge className="h-3 px-1 text-[9px] bg-purple-500 hover:bg-purple-600">Serialized</Badge>
                                 )}
                                 {device.deviceAttributes?.sellable && (
-                                    <Badge className="h-3 px-1 text-[9px] bg-green-500 hover:bg-green-600">Sellable</Badge>
+                                    <Badge className="h-3 px-1 text-[9px] bg-green-500 hover:bg-green-600">Processed</Badge>
                                 )}
                             </div>
                         </div>
@@ -768,7 +769,7 @@ function BinContentsList({ devices, onSelect }: { devices: WarehouseEntity[], on
 }
 
 export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesPanelProps) {
-    const { state, updateEntity, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, boxEntities, unboxEntities } = useWarehouse();
+    const { state, updateEntity, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, boxEntities, unboxEntities, updateEntities } = useWarehouse();
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
 
@@ -808,6 +809,7 @@ export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesP
     };
 
     const [isUnboxDialogOpen, setUnboxDialogOpen] = useState(false);
+    const [isBulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
 
     const handleUnboxInPlace = (deleteBox: boolean) => {
         const entity = state.entities[Array.from(selectedIds)[0]];
@@ -1153,6 +1155,17 @@ export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesP
                             BOX IN PLACE
                         </Button>
                     )}
+                    {deviceCount > 0 && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="mr-2"
+                            onClick={() => setBulkEditDialogOpen(true)}
+                        >
+                            <Icons.Edit className="h-4 w-4 mr-2" />
+                            Edit Attributes
+                        </Button>
+                    )}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -1215,6 +1228,22 @@ export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesP
                     onClose={() => setIsBoxDialogOpen(false)}
                     selectedDevices={Array.from(selectedIds).map(id => state.entities[id]).filter(e => e && e.type === 'Device') as WarehouseEntity[]}
                     onConfirm={handleBoxInPlace}
+                />
+
+                <BulkEditDialog
+                    isOpen={isBulkEditDialogOpen}
+                    onClose={() => setBulkEditDialogOpen(false)}
+                    selectedDevices={selectedEntities.filter(e => e.type === 'Device')}
+                    onConfirm={(updates) => {
+                        const entityUpdates = selectedEntities
+                            .filter(e => e.type === 'Device')
+                            .map(e => ({
+                                id: e.id,
+                                updates: { deviceAttributes: updates }
+                            }));
+                        updateEntities(entityUpdates);
+                        toast.success(`Updated ${entityUpdates.length} devices`);
+                    }}
                 />
 
                 {moveBlockedInfo && (
@@ -1484,12 +1513,13 @@ export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesP
 
                             {['tested', 'sellable', 'serialized'].map((ruleKey) => {
                                 const currentRule = entity.departmentRules?.[ruleKey as keyof DepartmentRules] || 'OFF';
+                                const label = ruleKey === 'sellable' ? 'Processed' : ruleKey;
                                 return (
                                     <div key={ruleKey} className="flex items-center justify-between p-3 border rounded-md bg-muted/20">
                                         <div className="space-y-0.5">
-                                            <Label className="text-base capitalize">{ruleKey}</Label>
+                                            <Label className="text-base capitalize">{label}</Label>
                                             <p className="text-xs text-muted-foreground">
-                                                Device must be {ruleKey}
+                                                Device must be {label}
                                             </p>
                                         </div>
                                         <Select
@@ -1833,7 +1863,7 @@ export function PropertiesPanel({ selectedIds, grouping, onSelect }: PropertiesP
                                             checked={entity.deviceAttributes?.sellable || false}
                                             onCheckedChange={(checked) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, sellable: checked as boolean } })}
                                         />
-                                        <Label htmlFor="sellable">Sellable</Label>
+                                        <Label htmlFor="sellable">Processed</Label>
                                     </div>
                                 </div>
                             </div>

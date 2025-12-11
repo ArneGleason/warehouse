@@ -8,10 +8,11 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
 import { WarehouseExplorer } from '@/components/WarehouseExplorer';
+import { ItemsPage } from '@/components/ItemsPage';
 import { ProcessingPage } from '@/components/ProcessingPage';
 
 export default function Home() {
-  const [currentView, setCurrentView] = useState<'explorer' | 'processing'>('explorer');
+  const [currentView, setCurrentView] = useState<'explorer' | 'processing' | 'items'>('explorer');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handleNavigateToExplorer = (deviceId: string) => {
@@ -26,8 +27,10 @@ export default function Home() {
         <div className="flex-1 overflow-hidden">
           {currentView === 'explorer' ? (
             <WarehouseExplorer selectedIds={selectedIds} onSelect={setSelectedIds} />
-          ) : (
+          ) : currentView === 'processing' ? (
             <ProcessingPage onNavigateToExplorer={handleNavigateToExplorer} />
+          ) : (
+            <ItemsPage />
           )}
         </div>
       </div>

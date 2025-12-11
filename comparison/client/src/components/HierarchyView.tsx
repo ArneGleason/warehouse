@@ -32,7 +32,6 @@ import { Switch } from '@/components/ui/switch';
 import { QuickMoveDialog } from '@/components/QuickMoveDialog';
 import { toast } from 'sonner';
 
-import { XlsxImportDialog } from '@/components/XlsxImportDialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -67,7 +66,6 @@ interface VirtualGroupNodeProps {
     onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
     grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
     setUnboxTargetId: (id: string | null) => void;
-    onImport: (id: string) => void;
 }
 
 const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
@@ -89,8 +87,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
     onMoveBlocked,
     onMoveRequest,
     grouping,
-    setUnboxTargetId,
-    onImport
+    setUnboxTargetId
 }) => {
     const { state } = useWarehouse();
     // Use a unique ID for the virtual node for expansion state
@@ -210,7 +207,6 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                             }}
                             selectedIds={selectedIds}
                             searchTerm=""
-                            onImport={onImport}
                             onDelete={(id) => onDelete(new Set([id]))}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -480,7 +476,6 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
                             }}
                             selectedIds={selectedIds}
                             searchTerm=""
-                            onImport={() => { }}
                             onDelete={(id) => onDelete(new Set([id]))}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -589,7 +584,6 @@ interface HierarchyNodeProps {
     onSelect: (ids: Set<string> | string, e: React.MouseEvent) => void;
     selectedIds: Set<string>;
     searchTerm: string;
-    onImport: (id: string) => void;
     onDelete: (id: string) => void;
     expandedIds: Set<string>;
     toggleExpansion: (id: string) => void;
@@ -612,7 +606,6 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
     onSelect,
     selectedIds,
     searchTerm,
-    onImport,
     onDelete,
     expandedIds,
     toggleExpansion,
@@ -937,7 +930,6 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             onSelect={onSelect}
                             selectedIds={selectedIds}
                             searchTerm={searchTerm}
-                            onImport={onImport}
                             onDelete={onDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -1017,7 +1009,6 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             onSelect={onSelect}
                             selectedIds={selectedIds}
                             searchTerm={searchTerm}
-                            onImport={onImport}
                             onDelete={onDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -1043,7 +1034,6 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             deviceIds={ids}
                             level={level + 1}
                             grouping={grouping}
-                            onImport={onImport}
 
                             onSelect={(ids, e) => {
                                 if (ids instanceof Set) {
@@ -1092,7 +1082,6 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             onSelect={onSelect}
                             selectedIds={selectedIds}
                             searchTerm={searchTerm}
-                            onImport={onImport}
                             onDelete={onDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -1229,9 +1218,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                                         </DropdownMenuItem>
                                     )}
                                     {entity.type === 'Bin' && (
-                                        <DropdownMenuItem onClick={() => onImport(entityId)}>
-                                            <Upload className="h-4 w-4 mr-2" /> Import Devices
-                                        </DropdownMenuItem>
+                                        // Import Removed
+                                        null
                                     )}
                                     <DropdownMenuItem onClick={() => onDelete(entityId)}>
                                         <Trash2 className="h-4 w-4 mr-2" /> Delete
@@ -1267,9 +1255,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                         <Trash2 className="h-4 w-4 mr-2" /> Delete
                     </ContextMenuItem>
                     {entity.type === 'Bin' && (
-                        <ContextMenuItem onClick={() => onImport(entityId)}>
-                            <Upload className="h-4 w-4 mr-2" /> Import Devices
-                        </ContextMenuItem>
+                        // Import Removed
+                        null
                     )}
                     {(entity.type === 'Bin' || entity.type === 'Workstation' || entity.type === 'Device') && (
                         <ContextMenuItem onClick={() => onQuickMove(entityId)}>
@@ -1318,15 +1305,6 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
     const { state, addEntity, deleteEntity, deleteEntities, moveEntity, moveEntities, undo, canUndo, updateConfig, unboxEntities, setWarehouseState } = useWarehouse();
     const [searchTerm, setSearchTerm] = useState('');
     // grouping state moved to props
-    const [importTargetId, setImportTargetId] = useState<string | null>(null);
-
-    const handleSetImportTargetId = (id: string | null) => {
-        if (id) {
-            console.log('[HierarchyView] Setting import target ID:', id);
-        }
-        setImportTargetId(id);
-    };
-
     const [deleteTargetIds, setDeleteTargetIds] = useState<Set<string> | null>(null);
     const [unboxTargetId, setUnboxTargetId] = useState<string | null>(null);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -1440,7 +1418,9 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
             configTitle: 'Untitled Layout',
             maxMoveWithoutConfirm: 1,
             processingSourceBinId: null,
-            processingDestBinId: null
+            processingDestBinId: null,
+            items: {},
+            vendorSkus: {}
         };
         // Add default root entity if it doesn't exist?
         // Actually the backend 'reset-warehouse' does this.
@@ -2045,7 +2025,6 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             onSelect={handleNodeClick}
                             selectedIds={selectedIds}
                             searchTerm={searchTerm}
-                            onImport={handleSetImportTargetId}
                             onDelete={handleDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
@@ -2068,14 +2047,6 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                     )}
                 </WarehouseRootNode>
             </div>
-
-            {importTargetId && (
-                <XlsxImportDialog
-                    isOpen={!!importTargetId}
-                    onClose={() => setImportTargetId(null)}
-                    targetId={importTargetId}
-                />
-            )}
 
             {moveBlockedInfo && (
                 <MoveBlockedDialog

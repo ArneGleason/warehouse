@@ -55,7 +55,7 @@ interface VirtualGroupNodeProps {
     selectedIds: Set<string>;
     expandedIds: Set<string>;
     toggleExpansion: (id: string) => void;
-    onQuickMove: (ids: Set<string>) => void;
+    onQuickMove: (idOrIds: string | Set<string>) => void;
     onDelete: (ids: Set<string>) => void;
     dragOverId: string | null;
     setDragOverId: (id: string | null) => void;
@@ -65,7 +65,8 @@ interface VirtualGroupNodeProps {
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
     onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
-    grouping: 'none' | 'po' | 'sku' | 'presold';
+    grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
+    setUnboxTargetId: (id: string | null) => void;
 }
 
 const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
@@ -86,7 +87,8 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
     activeFilters,
     onMoveBlocked,
     onMoveRequest,
-    grouping
+    grouping,
+    setUnboxTargetId
 }) => {
     const { state } = useWarehouse();
     // Use a unique ID for the virtual node for expansion state
@@ -210,7 +212,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                             onDelete={(id) => onDelete(new Set([id]))}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
-                            onQuickMove={(id) => onQuickMove(new Set([id]))}
+                            onQuickMove={onQuickMove}
                             grouping="none" // Don't group recursively inside a group
                             dragOverId={dragOverId}
                             setDragOverId={setDragOverId}
@@ -220,6 +222,7 @@ const VirtualGroupNode: React.FC<VirtualGroupNodeProps> = ({
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
                 </div>
@@ -238,9 +241,9 @@ interface VirtualQueueNodeProps {
     selectedIds: Set<string>;
     expandedIds: Set<string>;
     toggleExpansion: (id: string) => void;
-    onQuickMove: (ids: Set<string>) => void;
+    onQuickMove: (idOrIds: string | Set<string>) => void;
     onDelete: (ids: Set<string>) => void;
-    grouping: 'none' | 'po' | 'sku' | 'presold';
+    grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
     dragOverId: string | null;
     setDragOverId: (id: string | null) => void;
     onDragStart: (items: { id: string; type: string }[]) => void;
@@ -249,6 +252,7 @@ interface VirtualQueueNodeProps {
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
     onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
+    setUnboxTargetId: (id: string | null) => void;
 }
 
 const QUEUE_COLORS: Record<string, string> = {
@@ -277,7 +281,8 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
     draggedItems,
     activeFilters = new Set(),
     onMoveBlocked,
-    onMoveRequest
+    onMoveRequest,
+    setUnboxTargetId
 }) => {
     const { state, updateEntity } = useWarehouse();
     const virtualId = `queue-${parentId}-${queueName}`;
@@ -477,7 +482,7 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
                             onDelete={(id) => onDelete(new Set([id]))}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
-                            onQuickMove={(id) => onQuickMove(new Set([id]))}
+                            onQuickMove={onQuickMove}
                             grouping="none"
                             dragOverId={dragOverId}
                             setDragOverId={setDragOverId}
@@ -486,6 +491,7 @@ const VirtualQueueNode: React.FC<VirtualQueueNodeProps> = ({
                             draggedItems={draggedItems}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
                 </div>
@@ -585,8 +591,8 @@ interface HierarchyNodeProps {
     onDelete: (id: string) => void;
     expandedIds: Set<string>;
     toggleExpansion: (id: string) => void;
-    onQuickMove: (id: string) => void;
-    grouping: 'none' | 'po' | 'sku' | 'presold';
+    onQuickMove: (idOrIds: string | Set<string>) => void;
+    grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
     dragOverId: string | null;
     setDragOverId: (id: string | null) => void;
     onDragStart: (items: { id: string; type: string }[]) => void;
@@ -595,6 +601,7 @@ interface HierarchyNodeProps {
     activeFilters?: Set<string>;
     onMoveBlocked: (info: { blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] }) => void;
     onMoveRequest: (draggedIds: string[], targetId: string | null) => void;
+    setUnboxTargetId: (id: string | null) => void;
 }
 
 const HierarchyNode: React.FC<HierarchyNodeProps> = ({
@@ -616,7 +623,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
     draggedItems,
     activeFilters = new Set(),
     onMoveBlocked,
-    onMoveRequest
+    onMoveRequest,
+    setUnboxTargetId
 }) => {
     const { state, addEntity, moveEntity, moveEntities, updateEntity } = useWarehouse();
     const entity = state.entities[entityId];
@@ -940,6 +948,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             draggedItems={draggedItems}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
 
@@ -955,7 +964,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             selectedIds={selectedIds}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
-                            onQuickMove={(ids) => (onQuickMove as any)(ids)}
+                            onQuickMove={onQuickMove}
                             onDelete={(ids) => (onDelete as any)(ids)}
                             grouping={grouping}
                             dragOverId={dragOverId}
@@ -965,6 +974,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             draggedItems={draggedItems}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
                 </div>
@@ -987,6 +997,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                     key = device.deviceAttributes?.sku || 'No SKU';
                 } else if (grouping === 'presold') {
                     key = device.deviceAttributes?.presold_order_number || 'No Presold Order';
+                } else if (grouping === 'processed') {
+                    key = device.deviceAttributes?.sellable ? 'Processed' : 'Not Processed';
                 }
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(id);
@@ -1017,6 +1029,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
 
@@ -1037,9 +1050,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             selectedIds={selectedIds}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
-                            onQuickMove={(ids) => {
-                                (onQuickMove as any)(ids);
-                            }}
+                            onQuickMove={onQuickMove}
                             onDelete={(ids) => {
                                 (onDelete as any)(ids);
                             }}
@@ -1051,6 +1062,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                             activeFilters={activeFilters}
                             onMoveBlocked={onMoveBlocked}
                             onMoveRequest={onMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
                 </div>
@@ -1090,6 +1102,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                         activeFilters={activeFilters}
                         onMoveBlocked={onMoveBlocked}
                         onMoveRequest={onMoveRequest}
+                        setUnboxTargetId={setUnboxTargetId}
                     />
                 ))}
             </div>
@@ -1186,7 +1199,7 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
                                     <Badge className="h-4 px-1 text-[10px] bg-purple-500 hover:bg-purple-600">Serialized</Badge>
                                 )}
                                 {entity.deviceAttributes?.sellable && (
-                                    <Badge className="h-4 px-1 text-[10px] bg-green-500 hover:bg-green-600">Sellable</Badge>
+                                    <Badge className="h-4 px-1 text-[10px] bg-green-500 hover:bg-green-600">Processed</Badge>
                                 )}
                             </div>
                         )}
@@ -1290,8 +1303,8 @@ const HierarchyNode: React.FC<HierarchyNodeProps> = ({
 interface HierarchyViewProps {
     onSelect: (ids: Set<string>) => void;
     selectedIds: Set<string>;
-    grouping: 'none' | 'po' | 'sku' | 'presold';
-    setGrouping: (grouping: 'none' | 'po' | 'sku' | 'presold') => void;
+    grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed';
+    setGrouping: (grouping: 'none' | 'po' | 'sku' | 'presold' | 'processed') => void;
 }
 
 export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: HierarchyViewProps) {
@@ -1402,7 +1415,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
     };
 
     const availableFilters = [
-        { id: 'sellable', label: 'Sellable' },
+        { id: 'sellable', label: 'Processed' },
         { id: 'tested', label: 'Tested' },
         { id: 'unlocked', label: 'Unlocked' },
         { id: 'grade_a', label: 'Grade A' },
@@ -1845,7 +1858,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                 <div className="flex items-center gap-2">
                     <Layers className="h-4 w-4 text-muted-foreground" />
                     <RadioGroup
-                        defaultValue="none"
+                        value={grouping}
                         className="flex gap-2"
                         onValueChange={(v) => setGrouping(v as any)}
                     >
@@ -1864,6 +1877,10 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                         <div className="flex items-center space-x-1">
                             <RadioGroupItem value="presold" id="presold" />
                             <Label htmlFor="presold" className="text-xs">Presold</Label>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                            <RadioGroupItem value="processed" id="processed" />
+                            <Label htmlFor="processed" className="text-xs">Processed</Label>
                         </div>
                     </RadioGroup>
                 </div>
@@ -1919,7 +1936,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             onDelete={handleDelete}
                             expandedIds={expandedIds}
                             toggleExpansion={toggleExpansion}
-                            onQuickMove={(id) => setQuickMoveIds(new Set([id]))}
+                            onQuickMove={handleQuickMove}
                             grouping={grouping}
                             dragOverId={dragOverId}
                             setDragOverId={setDragOverId}
@@ -1928,6 +1945,7 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             draggedItems={draggedItems}
                             onMoveBlocked={setMoveBlockedInfo}
                             onMoveRequest={handleMoveRequest}
+                            setUnboxTargetId={setUnboxTargetId}
                         />
                     ))}
                     {state.roots.length === 0 && (
@@ -1977,7 +1995,9 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
                             toast.success(`Deleted ${deleteTargetIds.size} items`);
                         }
                     }}
-                    count={deleteTargetIds.size}
+                    entityName={deleteTargetIds.size === 1
+                        ? state.entities[Array.from(deleteTargetIds)[0]]?.label || 'Item'
+                        : `${deleteTargetIds.size} items`}
                 />
             )}
 

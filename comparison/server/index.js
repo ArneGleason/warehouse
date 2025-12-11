@@ -140,9 +140,16 @@ app.post('/api/layouts/:layoutId/restore/:checkpointId', (req, res) => {
 // Test Results API
 
 app.post('/api/test-results/reset', (req, res) => {
+    const { skipSeed } = req.body;
+
     // 1. Clear existing results
     db.run('DELETE FROM test_results', (err) => {
         if (err) return res.status(500).json({ error: err.message });
+
+        if (skipSeed) {
+            io.emit('test-results-reset', []); // Broadcast empty reset
+            return res.json({ success: true, count: 0, message: 'Results cleared, seeding skipped.' });
+        }
 
         // 2. Generate Seed Data
         const targets = [

@@ -503,6 +503,97 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
             .sort((a, b) => b.matchScore - a.matchScore);
     }, [selectedResult, state.entities, poFilter, skuFilter]);
 
+    // Validation Helper
+    const validationWarnings = React.useMemo(() => {
+        if (!selectedResult || !skuFilter) return [];
+        const item = state.items?.[skuFilter];
+        if (!item) return [];
+
+        const warnings: string[] = [];
+
+        console.log('DEBUG: Validation Check', {
+            skuFilter,
+            item,
+            result: selectedResult
+        });
+
+        // Capacity Check
+        // Item capacity is usually number or string. Test result is number.
+        const itemCap = item.capacity_gb ? item.capacity_gb.toString().trim() : '';
+        const resCap = selectedResult.capacity ? selectedResult.capacity.toString().trim() : '';
+
+        if (itemCap && resCap && itemCap !== resCap) {
+            warnings.push(`Capacity Mismatch: Test says ${selectedResult.capacity}GB, Item Master says ${item.capacity_gb}GB`);
+        }
+
+        // Color Check
+        // Rough Check
+        const itemColor = item.color ? item.color.toLowerCase().trim() : '';
+        const resColor = selectedResult.color ? selectedResult.color.toLowerCase().trim() : '';
+
+        if (itemColor && resColor && itemColor !== resColor) {
+            warnings.push(`Color Mismatch: Test says ${selectedResult.color}, Item Master says ${item.color}`);
+        }
+
+        // Lock Status Check
+        if (item.lockStatus && selectedResult.automated?.details?.simLock) {
+            const testLock = selectedResult.automated.details.simLock;
+            // Normalize
+            const isTestUnlocked = testLock.toLowerCase().trim() === 'unlocked';
+            const isItemUnlocked = item.lockStatus.toLowerCase().trim() === 'unlocked';
+
+            if (isTestUnlocked !== isItemUnlocked) {
+                warnings.push(`Lock Status Mismatch: Test says ${testLock}, Item Master says ${item.lockStatus}`);
+            }
+        }
+
+        return warnings;
+    }, [selectedResult, skuFilter, state.items]);
+
+
+    // Validation for Pending Process (Dialog)
+    const dialogValidationWarnings = React.useMemo(() => {
+        if (!pendingProcess) return [];
+        const device = state.entities[pendingProcess.deviceId];
+        const sku = device?.deviceAttributes?.sku;
+        if (!sku) return []; // Can't validate without SKU
+
+        const item = state.items?.[sku];
+        if (!item) return [];
+
+        const result = pendingProcess.result;
+        const warnings: string[] = [];
+
+        // Capacity Check
+        const itemCap = item.capacity_gb ? item.capacity_gb.toString().trim() : '';
+        const resCap = result.capacity ? result.capacity.toString().trim() : '';
+
+        if (itemCap && resCap && itemCap !== resCap) {
+            warnings.push(`Capacity Mismatch: Test says ${result.capacity}GB, Item Master says ${item.capacity_gb}GB`);
+        }
+
+        // Color Check
+        const itemColor = item.color ? item.color.toLowerCase().trim() : '';
+        const resColor = result.color ? result.color.toLowerCase().trim() : '';
+
+        if (itemColor && resColor && itemColor !== resColor) {
+            warnings.push(`Color Mismatch: Test says ${result.color}, Item Master says ${item.color}`);
+        }
+
+        // Lock Status Check
+        if (item.lockStatus && result.automated?.details?.simLock) {
+            const testLock = result.automated.details.simLock;
+            const isTestUnlocked = testLock.toLowerCase().trim() === 'unlocked';
+            const isItemUnlocked = item.lockStatus.toLowerCase().trim() === 'unlocked';
+
+            if (isTestUnlocked !== isItemUnlocked) {
+                warnings.push(`Lock Status Mismatch: Test says ${testLock}, Item Master says ${item.lockStatus}`);
+            }
+        }
+
+        return warnings;
+    }, [pendingProcess, state.entities, state.items]);
+
     const finalizeProcessing = (deviceId: string, result: TestResult) => {
         const currentDevice = state.entities[deviceId];
         const currentAttributes = currentDevice?.deviceAttributes || {};
@@ -845,6 +936,22 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                             {matchingDevices.length > 0 && <Badge variant="secondary">{matchingDevices.length}</Badge>}
                         </h3>
 
+                        {/* Validation Warnings (Always Visible if Results & SKU Selected) */}
+                        {validationWarnings.length > 0 && (
+                            <div className="bg-destructive/10 border border-destructive/20 p-4 rounded-md mb-2">
+                                <div className="flex items-center gap-2 text-destructive font-semibold mb-1">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <span>Validation Mismatch</span>
+                                </div>
+                                <div className="text-sm text-destructive/90 mb-2">
+                                    The selected Test Result attributes do not match the Item Master definition for this SKU.
+                                </div>
+                                <ul className="list-disc pl-5 text-sm text-destructive/90 space-y-1">
+                                    {validationWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                                </ul>
+                            </div>
+                        )}
+
                         {!poFilter || !skuFilter ? (
                             <div className="text-muted-foreground text-sm italic py-8 text-center border rounded-md border-dashed bg-muted/10">
                                 Please select both a <strong>Received PO</strong> and <strong>Received SKU</strong> to view matching devices.
@@ -894,66 +1001,64 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                                     Receive New Device
                                 </Button>
                             </div>
-                        ) : (
+                        ) : <div className="grid gap-3">
+                            {groupedMatches.map(item => {
+                                const device = item as any; // Cast for implicit props
+                                // Calculate Match Reasons
+                                const reasons: string[] = [];
+                                if (selectedResult && device.deviceAttributes?.model === selectedResult.model) reasons.push('Model Match');
+                                if (poFilter && device.deviceAttributes?.po_number === poFilter) reasons.push('PO Match');
+                                if (skuFilter && device.deviceAttributes?.sku === skuFilter) reasons.push('SKU Match');
 
-                            <div className="grid gap-3">
-                                {groupedMatches.map(item => {
-                                    const device = item as any; // Cast for implicit props
-                                    // Calculate Match Reasons
-                                    const reasons: string[] = [];
-                                    if (selectedResult && device.deviceAttributes?.model === selectedResult.model) reasons.push('Model Match');
-                                    if (poFilter && device.deviceAttributes?.po_number === poFilter) reasons.push('PO Match');
-                                    if (skuFilter && device.deviceAttributes?.sku === skuFilter) reasons.push('SKU Match');
-
-                                    return (
-                                        <div key={device.id} className="border p-4 rounded-md bg-card flex justify-between items-center group hover:border-primary transition-colors shadow-sm">
-                                            <div>
-                                                <div className="font-medium flex items-center gap-2">
-                                                    {device.isGroup ? (
-                                                        <>
-                                                            {device.deviceAttributes?.manufacturer} {device.deviceAttributes?.model}
-                                                            <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200">
-                                                                {device.groupCount} Available
-                                                            </Badge>
-                                                        </>
-                                                    ) : (
-                                                        device.label
-                                                    )}
-
-                                                    {!device.isGroup && reasons.map(r => <Badge key={r} variant="outline" className="text-[10px] bg-secondary/50">{r}</Badge>)}
-
-                                                    {device.deviceAttributes?.sellable && (
-                                                        <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-[10px] flex items-center gap-1">
-                                                            <CheckCircle2 className="h-3 w-3" /> Processed
+                                return (
+                                    <div key={device.id} className="border p-4 rounded-md bg-card flex justify-between items-center group hover:border-primary transition-colors shadow-sm">
+                                        <div>
+                                            <div className="font-medium flex items-center gap-2">
+                                                {device.isGroup ? (
+                                                    <>
+                                                        {device.deviceAttributes?.manufacturer} {device.deviceAttributes?.model}
+                                                        <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200">
+                                                            {device.groupCount} Available
                                                         </Badge>
-                                                    )}
-                                                </div>
-                                                <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
-                                                    <span>SKU: <span className="text-foreground">{device.deviceAttributes?.sku || '-'}</span></span>
-                                                    <span>PO: <span className="text-foreground">{device.deviceAttributes?.po_number || '-'}</span></span>
-                                                    {!device.isGroup && <span>IMEI: <span className="text-foreground">{device.deviceAttributes?.imei || '-'}</span></span>}
-                                                    <span>Color: <span className="text-foreground">{device.deviceAttributes?.color || '-'}</span></span>
-                                                </div>
+                                                    </>
+                                                ) : (
+                                                    device.label
+                                                )}
+
+                                                {!device.isGroup && reasons.map(r => <Badge key={r} variant="outline" className="text-[10px] bg-secondary/50">{r}</Badge>)}
+
+                                                {device.deviceAttributes?.sellable && (
+                                                    <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-[10px] flex items-center gap-1">
+                                                        <CheckCircle2 className="h-3 w-3" /> Processed
+                                                    </Badge>
+                                                )}
                                             </div>
-                                            <Button
-                                                onClick={() => {
-                                                    if (selectedResult) {
-                                                        // If group, use the first ID (which is device.id as per our map logic)
-                                                        handleMatchDevice(device.id);
-                                                    } else {
-                                                        toast.error("Please scan a test result first (or perform manual test)");
-                                                    }
-                                                }}
-                                                disabled={!selectedResult}
-                                                className={cn(selectedResult ? "bg-primary" : "bg-muted text-muted-foreground")}
-                                            >
-                                                {device.isGroup ? "Connect & Process (Any)" : "Connect & Process"}
-                                            </Button>
+                                            <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
+                                                <span>SKU: <span className="text-foreground">{device.deviceAttributes?.sku || '-'}</span></span>
+                                                <span>PO: <span className="text-foreground">{device.deviceAttributes?.po_number || '-'}</span></span>
+                                                {!device.isGroup && <span>IMEI: <span className="text-foreground">{device.deviceAttributes?.imei || '-'}</span></span>}
+                                                <span>Color: <span className="text-foreground">{device.deviceAttributes?.color || '-'}</span></span>
+                                            </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
+                                        <Button
+                                            onClick={() => {
+                                                if (selectedResult) {
+                                                    // If group, use the first ID (which is device.id as per our map logic)
+                                                    handleMatchDevice(device.id);
+                                                } else {
+                                                    toast.error("Please scan a test result first (or perform manual test)");
+                                                }
+                                            }}
+                                            disabled={!selectedResult}
+                                            className={cn(selectedResult ? "bg-primary" : "bg-muted text-muted-foreground")}
+                                        >
+                                            {device.isGroup ? "Connect & Process (Any)" : "Connect & Process"}
+                                        </Button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        }
                     </div>
 
                     {/* 2. Testing Section (Moved to Bottom) */}
@@ -1233,6 +1338,21 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                         </DialogDescription>
                     </DialogHeader>
 
+                    {dialogValidationWarnings.length > 0 && (
+                        <div className="bg-destructive/10 border border-destructive/20 p-4 rounded-md mb-4">
+                            <div className="flex items-center gap-2 text-destructive font-semibold mb-2">
+                                <AlertTriangle className="h-5 w-5" />
+                                <span>Validation Warning</span>
+                            </div>
+                            <div className="text-sm text-destructive/90 mb-2 font-medium">
+                                Attributes do not match Item Master! Recommended: Move to Exception.
+                            </div>
+                            <ul className="list-disc pl-5 text-sm text-destructive/90 space-y-1">
+                                {dialogValidationWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                            </ul>
+                        </div>
+                    )}
+
                     {pendingProcess && (
                         <div className="grid grid-cols-2 gap-4 border rounded-md p-4 bg-muted/10 text-sm">
                             <div>
@@ -1279,20 +1399,9 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                         }}>Confirm & Process</Button>
                     </DialogFooter>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
         </div >
     );
 }
 
-function ResultRow({ label, value }: { label: string, value: string }) {
-    let color = 'text-foreground';
-    if (value === 'Pass' || value === 'Unlocked' || value === 'OK') color = 'text-green-600 dark:text-green-400';
-    if (value === 'Fail' || value === 'Locked' || value === 'Warning') color = 'text-red-600 dark:text-red-400';
 
-    return (
-        <div className="flex justify-between py-1 border-b border-dashed last:border-0">
-            <span className="text-muted-foreground">{label}</span>
-            <span className={cn("font-medium", color)}>{value}</span>
-        </div>
-    );
-}

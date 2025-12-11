@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { useWarehouse } from '@/components/context/WarehouseContext';
-import { ENTITY_CONFIG, WarehouseEntity } from '@/lib/warehouse';
+import { ENTITY_CONFIG, WarehouseEntity, DeviceAttributes } from '@/lib/warehouse';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,8 +41,8 @@ import {
     DropdownMenuSubTrigger,
     DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Trash2, Move, Upload, ShieldAlert, Printer, Copy, Plus, QrCode } from 'lucide-react';
-import { XlsxImportDialog } from '@/components/XlsxImportDialog';
+import { MoreVertical, Trash2, Move, ShieldAlert, Printer, Copy, Plus, QrCode } from 'lucide-react';
+// import { XlsxImportDialog } from '@/components/XlsxImportDialog';
 import { RuleCondition, DepartmentRules } from '@/lib/warehouse';
 import { validateMove } from '@/lib/rules';
 import { MoveBlockedDialog } from '@/components/MoveBlockedDialog';
@@ -2078,13 +2078,7 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                     entityName={entity.label}
                 />
 
-                {importTargetId && (
-                    <XlsxImportDialog
-                        isOpen={!!importTargetId}
-                        onClose={() => setImportTargetId(null)}
-                        targetId={importTargetId}
-                    />
-                )}
+                {/* Import Dialog Removed */}
             </div>
         );
     }
@@ -2197,9 +2191,8 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                             </DropdownMenuItem>
                         )}
                         {entity.type === 'Bin' && (
-                            <DropdownMenuItem onClick={() => setImportTargetId(entity.id)}>
-                                <Upload className="h-4 w-4 mr-2" /> Import Devices
-                            </DropdownMenuItem>
+                            // Import Removed
+                            null
                         )}
                         <DropdownMenuItem onClick={() => setDeleteDialogOpen(true)} className="text-destructive focus:text-destructive">
                             <Trash2 className="h-4 w-4 mr-2" /> Delete Entity
@@ -2316,11 +2309,55 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                                 <h4 className="font-semibold text-sm">Device Attributes</h4>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>SKU</Label>
-                                        <Input
+                                        <div className="flex items-center gap-2">
+                                            <Label>SKU</Label>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-4 w-4"
+                                                onClick={() => {
+                                                    if (entity.deviceAttributes?.sku) {
+                                                        navigator.clipboard.writeText(entity.deviceAttributes.sku);
+                                                        toast.success('SKU copied to clipboard');
+                                                    }
+                                                }}
+                                                title="Copy SKU"
+                                                disabled={!entity.deviceAttributes?.sku}
+                                            >
+                                                <Icons.Copy className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+                                        <Select
                                             value={entity.deviceAttributes?.sku || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, sku: e.target.value } })}
-                                        />
+                                            onValueChange={(val) => {
+                                                const selectedItem = state.items?.[val];
+                                                const updates: Partial<DeviceAttributes> = { sku: val };
+
+                                                if (selectedItem) {
+                                                    updates.manufacturer = selectedItem.manufacturer;
+                                                    updates.model = selectedItem.model;
+                                                    updates.category = selectedItem.category;
+                                                    updates.capacity_gb = selectedItem.capacity_gb;
+                                                    updates.color = selectedItem.color;
+                                                    updates.carrier = selectedItem.carrier;
+                                                    updates.lock_status = selectedItem.lockStatus;
+                                                    updates.grade = selectedItem.grade;
+                                                }
+
+                                                updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, ...updates } });
+                                            }}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select SKU" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {Object.values(state.items || {}).map((item) => (
+                                                    <SelectItem key={item.sku} value={item.sku}>
+                                                        {item.sku}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Vendor SKU</Label>
@@ -2357,56 +2394,64 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                                         <Label>Manufacturer</Label>
                                         <Input
                                             value={entity.deviceAttributes?.manufacturer || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, manufacturer: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Model</Label>
                                         <Input
                                             value={entity.deviceAttributes?.model || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, model: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Category</Label>
                                         <Input
                                             value={entity.deviceAttributes?.category || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, category: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Capacity (GB)</Label>
                                         <Input
                                             value={entity.deviceAttributes?.capacity_gb || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, capacity_gb: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Color</Label>
                                         <Input
                                             value={entity.deviceAttributes?.color || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, color: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Carrier</Label>
                                         <Input
                                             value={entity.deviceAttributes?.carrier || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, carrier: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Lock Status</Label>
                                         <Input
                                             value={entity.deviceAttributes?.lock_status || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, lock_status: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Grade</Label>
                                         <Input
                                             value={entity.deviceAttributes?.grade || ''}
-                                            onChange={(e) => updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, grade: e.target.value } })}
+                                            readOnly
+                                            className="bg-muted"
                                         />
                                     </div>
                                 </div>
@@ -2533,13 +2578,7 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                 entityName={entity.label}
             />
 
-            {importTargetId && (
-                <XlsxImportDialog
-                    isOpen={!!importTargetId}
-                    onClose={() => setImportTargetId(null)}
-                    targetId={importTargetId}
-                />
-            )}
+            {/* Import Dialog Removed */}
 
             <UnboxInPlaceDialog
                 isOpen={!!unboxTargetId}
@@ -2633,7 +2672,7 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                         const sortedSkus = Object.entries(skuCounts).sort((a, b) => b[1] - a[1]);
                         let skuSummary = '';
                         if (sortedSkus.length > 0) {
-                            const [mostFrequentSku, count] = sortedSkus[0];
+                            const [mostFrequentSku] = sortedSkus[0];
                             if (sortedSkus.length === 1) {
                                 skuSummary = mostFrequentSku;
                             } else {

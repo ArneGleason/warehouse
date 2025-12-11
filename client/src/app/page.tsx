@@ -12,13 +12,23 @@ import { ProcessingPage } from '@/components/ProcessingPage';
 
 export default function Home() {
   const [currentView, setCurrentView] = useState<'explorer' | 'processing'>('explorer');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const handleNavigateToExplorer = (deviceId: string) => {
+    setSelectedIds(new Set([deviceId]));
+    setCurrentView('explorer');
+  };
 
   return (
     <WarehouseProvider>
       <div className="h-screen w-full bg-background flex overflow-hidden">
         <Sidebar currentView={currentView} onViewChange={setCurrentView} />
         <div className="flex-1 overflow-hidden">
-          {currentView === 'explorer' ? <WarehouseExplorer /> : <ProcessingPage />}
+          {currentView === 'explorer' ? (
+            <WarehouseExplorer selectedIds={selectedIds} onSelect={setSelectedIds} />
+          ) : (
+            <ProcessingPage onNavigateToExplorer={handleNavigateToExplorer} />
+          )}
         </div>
       </div>
       <Toaster />

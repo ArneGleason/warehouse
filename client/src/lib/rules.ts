@@ -57,12 +57,12 @@ export function validateMove(state: WarehouseState, deviceIds: string[], targetI
                 failed = true;
             }
 
-            // Check Sellable Rule
+            // Check Processed Rule
             if (rules.sellable === 'MUST_HAVE' && !attrs.sellable) {
-                if (!currentBlockingRules.includes('Must be Sellable')) currentBlockingRules.push('Must be Sellable');
+                if (!currentBlockingRules.includes('Must be Processed')) currentBlockingRules.push('Must be Processed');
                 failed = true;
             } else if (rules.sellable === 'MUST_NOT_HAVE' && attrs.sellable) {
-                if (!currentBlockingRules.includes('Must NOT be Sellable')) currentBlockingRules.push('Must NOT be Sellable');
+                if (!currentBlockingRules.includes('Must NOT be Processed')) currentBlockingRules.push('Must NOT be Processed');
                 failed = true;
             }
 

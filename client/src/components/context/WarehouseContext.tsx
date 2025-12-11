@@ -17,9 +17,10 @@ type Action =
     | { type: 'BATCH_MOVE'; payload: { moves: { id: string; targetId: string | null }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
-    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number } }
+    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null } }
     | { type: 'BOX_ENTITIES'; payload: { boxId: string; boxLabel: string; boxBarcode: string; parentId: string | null; deviceIds: string[] } }
-    | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } };
+    | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } }
+    | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } };
 
 // Initial State
 const initialState: WarehouseState = {
@@ -27,6 +28,8 @@ const initialState: WarehouseState = {
     roots: [],
     configTitle: 'Untitled Layout',
     maxMoveWithoutConfirm: 1,
+    processingSourceBinId: null,
+    processingDestBinId: null,
 };
 
 // Reducer
@@ -428,6 +431,34 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
             };
         }
 
+        case 'BATCH_UPDATE_ENTITIES': {
+            const newEntities = { ...state.entities };
+            action.payload.updates.forEach(({ id, updates }) => {
+                if (newEntities[id]) {
+                    // Handle label regeneration for devices if attributes change
+                    let finalUpdates = { ...updates };
+                    if (newEntities[id].type === 'Device' && updates.deviceAttributes) {
+                        const currentAttrs = newEntities[id].deviceAttributes || {};
+                        const newAttrs = { ...currentAttrs, ...updates.deviceAttributes };
+                        finalUpdates.label = generateDeviceLabel(newAttrs);
+                    }
+
+                    newEntities[id] = {
+                        ...newEntities[id],
+                        ...finalUpdates,
+                        deviceAttributes: updates.deviceAttributes ? {
+                            ...newEntities[id].deviceAttributes,
+                            ...updates.deviceAttributes
+                        } : newEntities[id].deviceAttributes
+                    };
+                }
+            });
+            return {
+                ...state,
+                entities: newEntities
+            };
+        }
+
         default:
             return state;
     }
@@ -449,9 +480,10 @@ interface WarehouseContextType {
     undo: () => void;
     canUndo: boolean;
     isConnected: boolean;
-    updateConfig: (config: { maxMoveWithoutConfirm?: number }) => void;
+    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null }) => void;
     boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
     unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
+    updateEntities: (updates: { id: string; updates: Partial<WarehouseEntity> }[]) => void;
 }
 
 const WarehouseContext = createContext<WarehouseContextType | undefined>(undefined);
@@ -569,6 +601,23 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         const coalesceKey = keys.length === 1 ? keys[0] : undefined;
 
         logAction('UPDATE', `Updated properties for ${state.entities[id]?.label || id}`, id, coalesceKey);
+    };
+
+    const updateEntities = (entityUpdates: { id: string; updates: Partial<WarehouseEntity> }[]) => {
+        // We can optimize this by creating a single action for batch update if we want,
+        // but for now iterating dispatch is okay if we only save once.
+        // Actually, reducer is pure, so we can chain them or add a BATCH_UPDATE action.
+        // Let's add BATCH_UPDATE to reducer for efficiency.
+
+        // For now, to avoid changing reducer too much, let's just dispatch individually but save once?
+        // No, dispatch triggers re-render.
+        // Let's add BATCH_UPDATE_ENTITIES action.
+
+        const action: Action = { type: 'BATCH_UPDATE_ENTITIES', payload: { updates: entityUpdates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UPDATE', `Bulk updated ${entityUpdates.length} entities`, entityUpdates[0].id);
     };
 
     const deleteEntity = (id: string) => {
@@ -819,7 +868,8 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             isConnected,
             updateConfig,
             boxEntities,
-            unboxEntities
+            unboxEntities,
+            updateEntities
         }}>
             {children}
         </WarehouseContext.Provider>

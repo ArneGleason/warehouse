@@ -62,9 +62,43 @@ export interface WarehouseEntity {
     };
 }
 
+export interface ItemDefinition {
+    sku: string;
+    category: string;
+    manufacturer: string;
+    model: string;
+    modelNumber?: string;
+    grade: string;
+    capacity_gb?: string; // Common attribute
+    color?: string;       // Common attribute
+    carrier?: string;
+    lockStatus?: string;
+    serialized: boolean;
+    active: boolean;
+    optionalAttributes: Record<string, any>;
+    vendorSkus: string[]; // IDs of VendorSku entities
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface VendorSku {
+    id: string;
+    itemSku: string;
+    vendorName: string;
+    vendorId: string; // Account # or similar
+    vendorSku: string;
+    status: 'Active' | 'Inactive';
+    poCount: number;
+    createdAt: string;
+}
+
 export interface WarehouseState {
     entities: Record<string, WarehouseEntity>;
     roots: string[];
+    // Item Master
+    items: Record<string, ItemDefinition>; // Keyed by SKU
+    vendorSkus: Record<string, VendorSku>; // Keyed by ID
+
     configTitle: string;
     maxMoveWithoutConfirm: number;
     processingSourceBinId?: string | null;

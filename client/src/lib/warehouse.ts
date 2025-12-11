@@ -66,6 +66,8 @@ export interface WarehouseState {
     roots: string[];
     configTitle: string;
     maxMoveWithoutConfirm: number;
+    processingSourceBinId?: string | null;
+    processingDestBinId?: string | null;
 }
 
 export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | null)[], icon: string }> = {

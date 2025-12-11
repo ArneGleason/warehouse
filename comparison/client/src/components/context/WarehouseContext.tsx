@@ -23,7 +23,11 @@ type Action =
     | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null } }
     | { type: 'BOX_ENTITIES'; payload: { boxId: string; boxLabel: string; boxBarcode: string; parentId: string | null; deviceIds: string[] } }
     | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } }
-    | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } };
+    | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } }
+    | { type: 'ADD_ITEM'; payload: { item: any } }
+    | { type: 'UPDATE_ITEM'; payload: { sku: string; updates: any } }
+    | { type: 'ADD_VENDOR_SKU'; payload: { vendorSku: any } }
+    | { type: 'UPDATE_VENDOR_SKU'; payload: { id: string; updates: any } };
 
 // Initial State
 const initialState: WarehouseState = {
@@ -34,6 +38,44 @@ const initialState: WarehouseState = {
     processingSourceBinId: null,
     processingDestBinId: null,
     processingExceptionBinId: null,
+    items: {
+        'IPHONE-13-128-MID': {
+            sku: 'IPHONE-13-128-MID', category: 'Phone', manufacturer: 'Apple', model: 'iPhone 13', modelNumber: 'A2633',
+            grade: 'A', capacity_gb: '128', color: 'Midnight', carrier: 'Unlocked', lockStatus: 'Unlocked', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: ['VS-001'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        },
+        'IPHONE-12-PRO-256-GLD': {
+            sku: 'IPHONE-12-PRO-256-GLD', category: 'Phone', manufacturer: 'Apple', model: 'iPhone 12 Pro', modelNumber: 'A2407',
+            grade: 'B', capacity_gb: '256', color: 'Gold', carrier: 'Verizon', lockStatus: 'Locked', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        },
+        'GALAXY-S22-128-GRY': {
+            sku: 'GALAXY-S22-128-GRY', category: 'Phone', manufacturer: 'Samsung', model: 'Galaxy S22', modelNumber: 'SM-S901U',
+            grade: 'A', capacity_gb: '128', color: 'Phantom Gray', carrier: 'T-Mobile', lockStatus: 'Locked', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        },
+        'PIXEL-7-128-OBS': {
+            sku: 'PIXEL-7-128-OBS', category: 'Phone', manufacturer: 'Google', model: 'Pixel 7', modelNumber: 'GA03435',
+            grade: 'A', capacity_gb: '128', color: 'Obsidian', carrier: 'Unlocked', lockStatus: 'Unlocked', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        },
+        'IPAD-9-64-SIL': {
+            sku: 'IPAD-9-64-SIL', category: 'Tablet', manufacturer: 'Apple', model: 'iPad 9th Gen', modelNumber: 'A2602',
+            grade: 'C', capacity_gb: '64', color: 'Silver', carrier: 'Generic', lockStatus: 'Unknown', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        },
+        'GALAXY-TAB-A8-32-GRY': {
+            sku: 'GALAXY-TAB-A8-32-GRY', category: 'Tablet', manufacturer: 'Samsung', model: 'Galaxy Tab A8', modelNumber: 'SM-X200',
+            grade: 'B', capacity_gb: '32', color: 'Dark Gray', carrier: 'Generic', lockStatus: 'Unknown', serialized: true, active: true,
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        }
+    },
+    vendorSkus: {
+        'VS-001': {
+            id: 'VS-001', itemSku: 'IPHONE-13-128-MID', vendorName: 'Verizon', vendorId: 'VZN-1122',
+            vendorSku: 'VZN-IP13-128-M', status: 'Active', poCount: 5, createdAt: new Date().toISOString()
+        }
+    },
 };
 
 // Reducer
@@ -506,6 +548,61 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
                 ...state,
                 entities: newEntities
             };
+            return {
+                ...state,
+                entities: newEntities
+            };
+        }
+
+        case 'ADD_ITEM': {
+            const { item } = action.payload;
+            return {
+                ...state,
+                items: { ...state.items, [item.sku]: item }
+            };
+        }
+
+        case 'UPDATE_ITEM': {
+            const { sku, updates } = action.payload;
+            const item = state.items[sku];
+            if (!item) return state;
+            return {
+                ...state,
+                items: { ...state.items, [sku]: { ...item, ...updates } }
+            };
+        }
+
+        case 'ADD_VENDOR_SKU': {
+            const { vendorSku } = action.payload;
+            // Also update the parent Item's vendorSkus list
+            const item = state.items[vendorSku.itemSku];
+            let newItems = state.items;
+
+            if (item) {
+                newItems = {
+                    ...state.items,
+                    [item.sku]: {
+                        ...item,
+                        vendorSkus: [...(item.vendorSkus || []), vendorSku.id]
+                    }
+                };
+            }
+
+            return {
+                ...state,
+                items: newItems,
+                vendorSkus: { ...state.vendorSkus, [vendorSku.id]: vendorSku }
+            };
+        }
+
+        case 'UPDATE_VENDOR_SKU': {
+            const { id, updates } = action.payload;
+            const vSku = state.vendorSkus[id];
+            if (!vSku) return state;
+            return {
+                ...state,
+                vendorSkus: { ...state.vendorSkus, [id]: { ...vSku, ...updates } }
+            };
         }
 
         default:
@@ -530,6 +627,13 @@ interface WarehouseContextType {
     boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
     unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
     updateEntities: (updates: { id: string; updates: Partial<WarehouseEntity> }[]) => void;
+
+    // Item Master
+    addItem: (item: any) => void;
+    updateItem: (sku: string, updates: any) => void;
+    addVendorSku: (vendorSku: any) => void;
+    updateVendorSku: (id: string, updates: any) => void;
+
     setWarehouseState: (newState: WarehouseState) => void;
 }
 
@@ -587,7 +691,17 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             .then(res => res.json())
             .then(data => {
                 if (data.data) {
-                    dispatch({ type: 'SET_STATE', payload: data.data });
+                    // Merge initial items if missing from saved state (Seed data)
+                    const loadedState = data.data;
+                    if (!loadedState.items || Object.keys(loadedState.items).length === 0) {
+                        loadedState.items = initialState.items;
+                        loadedState.vendorSkus = initialState.vendorSkus;
+                    }
+                    if (!loadedState.vendorSkus) {
+                        loadedState.vendorSkus = initialState.vendorSkus;
+                    }
+
+                    dispatch({ type: 'SET_STATE', payload: loadedState });
                 }
             })
             .catch(err => {
@@ -876,6 +990,39 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         logAction('UNBOX', `Unboxed ${boxId}`, boxId);
     };
 
+    // Item Master Actions
+    const addItem = (item: any) => {
+        const action: Action = { type: 'ADD_ITEM', payload: { item } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Created Item: ${item.sku}`, item.sku);
+    };
+
+    const updateItem = (sku: string, updates: any) => {
+        const action: Action = { type: 'UPDATE_ITEM', payload: { sku, updates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UPDATE', `Updated Item: ${sku}`, sku);
+    };
+
+    const addVendorSku = (vendorSku: any) => {
+        const action: Action = { type: 'ADD_VENDOR_SKU', payload: { vendorSku } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Created Vendor SKU: ${vendorSku.vendorSku}`, vendorSku.id);
+    };
+
+    const updateVendorSku = (id: string, updates: any) => {
+        const action: Action = { type: 'UPDATE_VENDOR_SKU', payload: { id, updates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UPDATE', `Updated Vendor SKU`, id);
+    };
+
     return (
         <WarehouseContext.Provider value={{
             state,
@@ -893,6 +1040,10 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             boxEntities,
             unboxEntities,
             updateEntities,
+            addItem,
+            updateItem,
+            addVendorSku,
+            updateVendorSku,
             setWarehouseState,
         }}>
             {children}
