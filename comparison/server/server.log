@@ -1,2 +1,101 @@
 Server running on http://localhost:3011
 Connected to the SQLite database.
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)
+TypeError: Cannot destructure property 'skipSeed' of 'req.body' as it is undefined.
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/index.js:143:13
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:157:13)
+    at Route.dispatch (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/route.js:117:3)
+    at handle (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:435:11)
+    at Layer.handleRequest (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/lib/layer.js:152:17)
+    at /Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:295:15
+    at processParams (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:582:12)
+    at next (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/router/index.js:291:5)
+    at read (/Users/agleason/Documents/Antigravity/warehouse-simulator/comparison/server/node_modules/body-parser/lib/read.js:63:5)

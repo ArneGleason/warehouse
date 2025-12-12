@@ -1233,7 +1233,7 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         const devicesToUnallocate = Object.values(state.entities).filter(e =>
             e.type === 'Device' &&
             e.deviceAttributes?.allocatedToOrder?.orderId === orderId &&
-            e.deviceAttributes?.sku === line.skuDisplay // Assuming skuDisplay holds the SKU
+            e.deviceAttributes?.sku === line.skuId
         ).slice(0, line.qty);
 
         if (devicesToUnallocate.length > 0) {

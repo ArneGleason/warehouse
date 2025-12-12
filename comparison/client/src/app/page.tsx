@@ -11,9 +11,10 @@ import { WarehouseExplorer } from '@/components/WarehouseExplorer';
 import { ItemsPage } from '@/components/ItemsPage';
 import { ProcessingPage } from '@/components/ProcessingPage';
 import { OrdersPage } from '@/components/OrdersPage';
+import { PickPackPage } from '@/components/PickPackPage';
 
 export default function Home() {
-  const [currentView, setCurrentView] = useState<'explorer' | 'processing' | 'items' | 'orders'>('explorer');
+  const [currentView, setCurrentView] = useState<'explorer' | 'processing' | 'items' | 'orders' | 'pickpack'>('explorer');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handleNavigateToExplorer = (deviceId: string) => {
@@ -32,8 +33,10 @@ export default function Home() {
             <ProcessingPage onNavigateToExplorer={handleNavigateToExplorer} />
           ) : currentView === 'items' ? (
             <ItemsPage />
-          ) : (
+          ) : currentView === 'orders' ? (
             <OrdersPage />
+          ) : (
+            <PickPackPage />
           )}
         </div>
       </div>

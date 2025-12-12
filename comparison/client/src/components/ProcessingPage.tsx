@@ -328,38 +328,8 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
     const hasSeeded = React.useRef(false);
 
     // Seed Demo Data
-    React.useEffect(() => {
-        if (hasSeeded.current) return;
-
-        const receivingDept = Object.values(state.entities).find(e => e.type === 'Department' && e.label === 'Receiving');
-        if (!receivingDept) return;
-
-        // Mark as seeded to prevent infinite loop
-        hasSeeded.current = true;
-
-        MOCK_RESULTS.forEach(result => {
-            // Check if device exists (by IMEI or Model+Color+Capacity match)
-            // Ideally check by IMEI if we want exact match, or attributes for "potential" match
-            // Let's check by IMEI to avoid duplicates
-            const exists = Object.values(state.entities).some(e =>
-                e.type === 'Device' && e.deviceAttributes?.imei === result.imei
-            );
-
-            if (!exists) {
-                const newId = addEntity('Device', receivingDept.id);
-                updateEntity(newId, {
-                    deviceAttributes: {
-                        manufacturer: result.manufacturer,
-                        model: result.model,
-                        capacity_gb: result.capacity.toString(),
-                        color: result.color,
-                        imei: result.imei,
-                        tested: false // Not tested yet in warehouse
-                    }
-                });
-            }
-        });
-    }, [state.entities, addEntity, updateEntity]); // Run when entities change (or just once effectively due to check)
+    // Seed Demo Data - REMOVED to prevent ghost devices
+    // Devices should be created via Import/Receive workflows or manual Reset actions.
 
 
     // Find Receiving Department

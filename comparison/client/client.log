@@ -1,0 +1,51 @@
+
+> client@0.1.0 dev
+> next dev -p 3010
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+   ▲ Next.js 16.0.4 (Turbopack)
+   - Local:         http://localhost:3010
+   - Network:       http://192.168.50.243:3010
+
+ ✓ Starting...
+ ✓ Ready in 2.5s
+ ○ Compiling / ...
+ ✓ Compiled in 84ms
+ GET / 200 in 3.7s (compile: 2.2s, render: 1400ms)
+ ✓ Compiled in 118ms
+ GET / 200 in 156ms (compile: 108ms, render: 49ms)
+ ✓ Compiled in 187ms
+ ✓ Compiled in 49ms
+ ✓ Compiled in 116ms
+ ✓ Compiled in 49ms
+ ✓ Compiled in 54ms
+ ✓ Compiled in 256ms
+ ✓ Compiled in 151ms
+ ✓ Compiled in 158ms
+ ✓ Compiled in 192ms
+ ✓ Compiled in 57ms
+ ✓ Compiled in 67ms
+ ✓ Compiled in 73ms
+ ✓ Compiled in 55ms
+ ✓ Compiled in 355ms
+ ✓ Compiled in 59ms
+ ✓ Compiled in 68ms
+ ✓ Compiled in 148ms
+ GET / 200 in 186ms (compile: 137ms, render: 48ms)
+ GET / 200 in 692ms (compile: 6ms, render: 686ms)
+ GET / 200 in 281ms (compile: 143ms, render: 139ms)
+ ✓ Compiled in 106ms
+ GET / 200 in 859ms (compile: 108ms, render: 751ms)
+ GET / 200 in 155ms (compile: 9ms, render: 145ms)
+ GET / 200 in 116ms (compile: 10ms, render: 107ms)
+ ✓ Compiled in 135ms
+ GET / 200 in 747ms (compile: 99ms, render: 648ms)
+ ✓ Compiled in 284ms
+ ✓ Compiled in 222ms
+ ✓ Compiled in 70ms
+ GET / 200 in 647ms (compile: 91ms, render: 556ms)
+ ✓ Compiled in 132ms
+ ✓ Compiled in 128ms
+ ✓ Compiled in 1383ms
+ ✓ Compiled in 1112ms
+ ✓ Compiled in 117ms
