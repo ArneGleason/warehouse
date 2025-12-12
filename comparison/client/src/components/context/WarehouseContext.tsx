@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { socket } from '@/lib/socket';
 import { logAction } from '@/lib/history';
-import { WarehouseEntity, WarehouseState, createEntity, canMoveEntity, generateDeviceLabel } from '@/lib/warehouse';
+import { WarehouseEntity, WarehouseState, createEntity, canMoveEntity, generateDeviceLabel, Order } from '@/lib/warehouse';
 import { v4 as uuidv4 } from 'uuid';
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
@@ -27,7 +27,14 @@ type Action =
     | { type: 'ADD_ITEM'; payload: { item: any } }
     | { type: 'UPDATE_ITEM'; payload: { sku: string; updates: any } }
     | { type: 'ADD_VENDOR_SKU'; payload: { vendorSku: any } }
-    | { type: 'UPDATE_VENDOR_SKU'; payload: { id: string; updates: any } };
+    | { type: 'ADD_VENDOR_SKU'; payload: { vendorSku: any } }
+    | { type: 'UPDATE_VENDOR_SKU'; payload: { id: string; updates: any } }
+    | { type: 'ADD_ORDER'; payload: { order: Order } }
+    | { type: 'UPDATE_ORDER'; payload: { id: string; updates: Partial<Order> } }
+    | { type: 'ALLOCATE_DEVICES'; payload: { orderId: string; orderNumber: string; buyerName: string; deviceIds: string[] } }
+    | { type: 'ALLOCATE_DEVICES'; payload: { orderId: string; orderNumber: string; buyerName: string; deviceIds: string[] } }
+    | { type: 'UNALLOCATE_DEVICES'; payload: { deviceIds: string[] } }
+    | { type: 'DELETE_ORDER'; payload: { id: string } };
 
 // Initial State
 const initialState: WarehouseState = {
@@ -76,6 +83,8 @@ const initialState: WarehouseState = {
             vendorSku: 'VZN-IP13-128-M', status: 'Active', poCount: 5, createdAt: new Date().toISOString()
         }
     },
+    orders: {},
+    orderCounter: 1000,
 };
 
 // Reducer
@@ -605,6 +614,88 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
             };
         }
 
+        case 'ADD_ORDER': {
+            const { order } = action.payload;
+            return {
+                ...state,
+                orders: { ...state.orders, [order.id]: order },
+                orderCounter: state.orderCounter + 1
+            };
+        }
+
+        case 'UPDATE_ORDER': {
+            const { id, updates } = action.payload;
+            const order = state.orders[id];
+            if (!order) return state;
+            return {
+                ...state,
+                orders: {
+                    ...state.orders,
+                    [id]: { ...order, ...updates, updatedAt: new Date().toISOString() }
+                }
+            };
+        }
+
+        case 'DELETE_ORDER': {
+            const { id } = action.payload;
+            const newOrders = { ...state.orders };
+            delete newOrders[id];
+
+            return {
+                ...state,
+                orders: newOrders
+            };
+        }
+
+        case 'ALLOCATE_DEVICES': {
+            const { orderId, orderNumber, buyerName, deviceIds } = action.payload;
+            const newEntities = { ...state.entities };
+
+            deviceIds.forEach(id => {
+                if (newEntities[id] && newEntities[id].deviceAttributes) {
+                    newEntities[id] = {
+                        ...newEntities[id],
+                        deviceAttributes: {
+                            ...newEntities[id].deviceAttributes,
+                            allocatedToOrder: {
+                                orderId,
+                                orderNumber,
+                                buyerName,
+                                allocatedAt: new Date().toISOString()
+                            }
+                        }
+                    };
+                }
+            });
+
+            return {
+                ...state,
+                entities: newEntities
+            };
+        }
+
+        case 'UNALLOCATE_DEVICES': {
+            const { deviceIds } = action.payload;
+            const newEntities = { ...state.entities };
+
+            deviceIds.forEach(id => {
+                if (newEntities[id] && newEntities[id].deviceAttributes) {
+                    const attrs = { ...newEntities[id].deviceAttributes };
+                    delete attrs.allocatedToOrder;
+
+                    newEntities[id] = {
+                        ...newEntities[id],
+                        deviceAttributes: attrs
+                    };
+                }
+            });
+
+            return {
+                ...state,
+                entities: newEntities
+            };
+        }
+
         default:
             return state;
     }
@@ -634,6 +725,16 @@ interface WarehouseContextType {
     addVendorSku: (vendorSku: any) => void;
     updateVendorSku: (id: string, updates: any) => void;
 
+    // Orders
+    addOrder: (order: Order) => void;
+    updateOrder: (id: string, updates: Partial<Order>) => void;
+    getNextOrderNumber: () => string;
+    getSellableInventory: () => Record<string, number>;
+    allocateDevices: (orderId: string, orderNumber: string, buyerName: string, sku: string, qty: number) => string[];
+    unallocateDevices: (deviceIds: string[]) => void;
+    deleteOrder: (orderId: string) => void;
+    removeOrderLine: (orderId: string, lineId: string) => void;
+    shipOrder: (orderId: string) => void;
     setWarehouseState: (newState: WarehouseState) => void;
 }
 
@@ -1023,6 +1124,150 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         logAction('UPDATE', `Updated Vendor SKU`, id);
     };
 
+    // Order Actions
+    const addOrder = (order: Order) => {
+        const action: Action = { type: 'ADD_ORDER', payload: { order } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Created Order: ${order.orderNumber}`, order.id);
+    };
+
+    const updateOrder = (id: string, updates: Partial<Order>) => {
+        const action: Action = { type: 'UPDATE_ORDER', payload: { id, updates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UPDATE', `Updated Order: ${state.orders[id]?.orderNumber}`, id);
+    };
+
+    const getNextOrderNumber = () => {
+        return `ORD-${state.orderCounter}`;
+    };
+
+    const getSellableInventory = () => {
+        const inventory: Record<string, number> = {};
+        Object.values(state.entities).forEach(entity => {
+            if (entity.type === 'Device' &&
+                entity.deviceAttributes?.sellable &&
+                !entity.deviceAttributes.allocatedToOrder) { // Check not allocated
+                const sku = entity.deviceAttributes.sku;
+                if (sku) {
+                    inventory[sku] = (inventory[sku] || 0) + 1;
+                }
+            }
+        });
+        return inventory;
+    };
+
+    const allocateDevices = (orderId: string, orderNumber: string, buyerName: string, sku: string, qty: number): string[] => {
+        // Find available devices
+        const availableDeviceIds: string[] = [];
+        const entities = Object.values(state.entities);
+
+        for (const entity of entities) {
+            if (availableDeviceIds.length >= qty) break;
+
+            if (entity.type === 'Device' &&
+                entity.deviceAttributes?.sku === sku &&
+                entity.deviceAttributes?.sellable &&
+                !entity.deviceAttributes.allocatedToOrder) {
+                availableDeviceIds.push(entity.id);
+            }
+        }
+
+        if (availableDeviceIds.length > 0) {
+            const action: Action = {
+                type: 'ALLOCATE_DEVICES',
+                payload: { orderId, orderNumber, buyerName, deviceIds: availableDeviceIds }
+            };
+            const newState = warehouseReducer(state, action);
+            dispatch(action);
+            saveState(newState);
+            logAction('UPDATE', `Allocated ${availableDeviceIds.length} devices to ${orderNumber}`, orderId);
+        }
+
+        return availableDeviceIds;
+    };
+
+    const unallocateDevices = (deviceIds: string[]) => {
+        if (deviceIds.length === 0) return;
+        const action: Action = { type: 'UNALLOCATE_DEVICES', payload: { deviceIds } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('UPDATE', `Unallocated ${deviceIds.length} devices`, deviceIds[0]);
+    };
+
+    const deleteOrder = (orderId: string) => {
+        const order = state.orders[orderId];
+        if (!order) return;
+
+        // 1. Unallocate all devices for this order
+        const allocatedDevices = Object.values(state.entities).filter(e =>
+            e.type === 'Device' && e.deviceAttributes?.allocatedToOrder?.orderId === orderId
+        );
+
+        if (allocatedDevices.length > 0) {
+            unallocateDevices(allocatedDevices.map(d => d.id));
+        }
+
+        // 2. Delete the order
+        const action: Action = { type: 'DELETE_ORDER', payload: { id: orderId } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('DELETE', `Deleted Order: ${order.orderNumber}`, orderId);
+    };
+
+    const removeOrderLine = (orderId: string, lineId: string) => {
+        const order = state.orders[orderId];
+        if (!order) return;
+
+        const line = order.lines.find(l => l.id === lineId);
+        if (!line) return;
+
+        // 1. Find devices allocated to this order AND matching this SKU
+        // Note: This is an approximation since we don't link specific device IDs to specific lines yet.
+        // We will unallocate 'qty' amount of devices of this SKU allocated to this order.
+        const devicesToUnallocate = Object.values(state.entities).filter(e =>
+            e.type === 'Device' &&
+            e.deviceAttributes?.allocatedToOrder?.orderId === orderId &&
+            e.deviceAttributes?.sku === line.skuDisplay // Assuming skuDisplay holds the SKU
+        ).slice(0, line.qty);
+
+        if (devicesToUnallocate.length > 0) {
+            unallocateDevices(devicesToUnallocate.map(d => d.id));
+        }
+
+        // 2. Update the order to remove the line
+        const updatedLines = order.lines.filter(l => l.id !== lineId);
+        updateOrder(orderId, { lines: updatedLines });
+    };
+
+    const shipOrder = (orderId: string) => {
+        const order = state.orders[orderId];
+        if (!order) return;
+
+        // 1. Find all devices allocated to this order
+        // In a real app, we'd have a more direct index, but scanning entities works for this scale
+        const allocatedDeviceIds = Object.values(state.entities)
+            .filter(e => e.type === 'Device' && e.deviceAttributes?.allocatedToOrder?.orderId === orderId)
+            .map(e => e.id);
+
+        // 2. Move them to a "Shipped" virtual bin (or just out of the warehouse)
+        // We'll assume a 'bin_shipped' exists or create/use a virtual ID. 
+        // For visual clarity, let's just make sure they aren't in the active layout.
+        // But to keep data, we re-parent them to 'bin_shipped'.
+        // Check if bin_shipped exists, if not, relying on "virtual" nature might be tricky for the visualizer
+        // UNLESS we just set their parentId to 'virtual_shipped' which isn't rendered.
+
+        moveEntities(allocatedDeviceIds, 'virtual_shipped');
+
+        // 3. Update Order Status
+        updateOrder(orderId, { status: 'Shipped', shippedAt: new Date().toISOString() });
+    };
+
     return (
         <WarehouseContext.Provider value={{
             state,
@@ -1044,7 +1289,16 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             updateItem,
             addVendorSku,
             updateVendorSku,
+            addOrder,
+            updateOrder,
+            getNextOrderNumber,
+            getSellableInventory,
+            allocateDevices,
+            unallocateDevices,
+            deleteOrder,
+            removeOrderLine,
             setWarehouseState,
+            shipOrder
         }}>
             {children}
         </WarehouseContext.Provider>

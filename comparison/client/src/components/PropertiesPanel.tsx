@@ -2307,6 +2307,22 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                         <TabsContent value="attributes" className="flex-1 p-4 space-y-6 overflow-auto">
                             <div className="space-y-4">
                                 <h4 className="font-semibold text-sm">Device Attributes</h4>
+
+                                {/* Allocation Info */}
+                                {entity.deviceAttributes?.allocatedToOrder && (
+                                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-3 mb-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Badge variant="default" className="bg-blue-600 hover:bg-blue-700">Allocated</Badge>
+                                            <div className="text-xs text-muted-foreground">
+                                                By {entity.deviceAttributes.allocatedToOrder.buyerName}
+                                            </div>
+                                        </div>
+                                        <div className="text-sm font-medium">
+                                            Order {entity.deviceAttributes.allocatedToOrder.orderNumber} • Allocated {new Date(entity.deviceAttributes.allocatedToOrder.allocatedAt).toLocaleString()}
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <div className="flex items-center gap-2">

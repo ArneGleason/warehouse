@@ -1,11 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, ClipboardList, Database, Package } from 'lucide-react';
+import { LayoutDashboard, ClipboardList, Database, Package, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
-    currentView: 'explorer' | 'processing' | 'items';
-    onViewChange: (view: 'explorer' | 'processing' | 'items') => void;
+    currentView: 'explorer' | 'processing' | 'items' | 'orders';
+    onViewChange: (view: 'explorer' | 'processing' | 'items' | 'orders') => void;
 }
 
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
@@ -34,6 +34,14 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 title="Items Master"
             >
                 <Database className="h-6 w-6" />
+            </Button>
+            <Button
+                variant={currentView === 'orders' ? 'secondary' : 'ghost'}
+                size="icon"
+                onClick={() => onViewChange('orders')}
+                title="Sales Orders"
+            >
+                <ShoppingBag className="h-6 w-6" />
             </Button>
         </div>
     );

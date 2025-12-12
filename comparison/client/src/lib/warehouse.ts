@@ -33,6 +33,13 @@ export interface DeviceAttributes {
     test_result?: any;
     // Device specific
     deviceAttributes?: DeviceAttributes;
+    // Allocation
+    allocatedToOrder?: {
+        orderId: string;
+        orderNumber: string;
+        buyerName: string;
+        allocatedAt: string;
+    };
 }
 
 export type RuleCondition = 'OFF' | 'MUST_HAVE' | 'MUST_NOT_HAVE';
@@ -104,6 +111,40 @@ export interface WarehouseState {
     processingSourceBinId?: string | null;
     processingDestBinId?: string | null;
     processingExceptionBinId?: string | null;
+
+    // Orders
+    orders: Record<string, Order>;
+    orderCounter: number;
+}
+
+export type OrderStatus = 'Draft' | 'Ready for Payment' | 'Ready for Picking' | 'Shipped';
+
+export interface OrderLine {
+    id: string;
+    orderId: string;
+    skuId: string; // The SKU (e.g. "IPHONE-13-128-MID")
+    skuDisplay: string; // Cached label
+    qty: number;
+    unitPrice?: number;
+}
+
+export interface Order {
+    id: string;
+    orderNumber: string; // e.g. "ORD-1001"
+    status: OrderStatus;
+    buyer: {
+        name: string;
+        company?: string;
+        email?: string;
+        phone?: string;
+        shipToAddress?: string;
+    };
+    notes?: string;
+    lines: OrderLine[];
+    createdAt: string;
+    updatedAt: string;
+    shippedAt?: string;
+    trackingNumber?: string;
 }
 
 export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | null)[], icon: string }> = {

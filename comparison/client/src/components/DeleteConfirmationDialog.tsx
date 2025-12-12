@@ -12,11 +12,12 @@ interface DeleteConfirmationDialogProps {
     onClose: () => void;
     onConfirm: () => void;
     entityName: string;
+    validationText?: string;
 }
 
-export function DeleteConfirmationDialog({ isOpen, onClose, onConfirm, entityName }: DeleteConfirmationDialogProps) {
+export function DeleteConfirmationDialog({ isOpen, onClose, onConfirm, entityName, validationText = 'delete' }: DeleteConfirmationDialogProps) {
     const [confirmText, setConfirmText] = useState('');
-    const isValid = confirmText.toLowerCase() === 'delete';
+    const isValid = !validationText || confirmText.toLowerCase() === validationText.toLowerCase();
 
     const handleConfirm = () => {
         if (isValid) {
@@ -36,22 +37,24 @@ export function DeleteConfirmationDialog({ isOpen, onClose, onConfirm, entityNam
                     </DialogTitle>
                     <DialogDescription>
                         Are you sure you want to delete <span className="font-semibold text-foreground">{entityName}</span>?
-                        This action cannot be undone. All children of this item will also be deleted.
+                        This action cannot be undone.{validationText && ' All associated data will be removed.'}
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="grid gap-4 py-4">
-                    <div className="grid w-full items-center gap-1.5">
-                        <Label htmlFor="confirm">Type "delete" to confirm</Label>
-                        <Input
-                            id="confirm"
-                            value={confirmText}
-                            onChange={(e) => setConfirmText(e.target.value)}
-                            placeholder="delete"
-                            className="border-destructive/50 focus-visible:ring-destructive"
-                        />
+                {validationText && (
+                    <div className="grid gap-4 py-4">
+                        <div className="grid w-full items-center gap-1.5">
+                            <Label htmlFor="confirm">Type "{validationText}" to confirm</Label>
+                            <Input
+                                id="confirm"
+                                value={confirmText}
+                                onChange={(e) => setConfirmText(e.target.value)}
+                                placeholder={validationText}
+                                className="border-destructive/50 focus-visible:ring-destructive"
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Cancel</Button>

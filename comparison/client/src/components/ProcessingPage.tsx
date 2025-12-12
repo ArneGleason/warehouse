@@ -785,18 +785,42 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
 
     const handleResetDemo = async () => {
         try {
-            await fetch(`${SERVER_URL}/api/test-results/reset`, { method: 'POST' });
+            // Filter for UNPROCESSED devices (no existing test result linked)
+            // AND limit to 4 for the demo logic
+            const unprocessedDevices = sourceBinDevices
+                .filter(d => !d.deviceAttributes?.testResult)
+                .slice(0, 4);
+
+            const targets = unprocessedDevices.map(d => ({
+                manufacturer: d.deviceAttributes?.manufacturer || 'Unknown',
+                model: d.deviceAttributes?.model || 'Device',
+                capacity: d.deviceAttributes?.capacity_gb || '0',
+                color: d.deviceAttributes?.color || 'Black',
+                imei: d.deviceAttributes?.imei || null
+            }));
+
+            const response = await fetch(`${SERVER_URL}/api/test-results/reset`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targets })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Server error: ${response.status}`);
+            }
+
             // Refresh list (or wait for socket)
             const res = await fetch(`${SERVER_URL}/api/test-results`);
             if (res.ok) {
                 const data = await res.json();
                 const pending = data.results.filter((r: any) => r.status && r.status !== 'PROCESSED');
                 setIncomingResults(pending);
-                toast.success("Demo Data Reset");
+                toast.success(`Demo Data Reset: Generated ${targets.length} results`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            toast.error("Failed to reset demo data");
+            toast.error(`Failed to reset demo data: ${err.message}`);
         }
     };
 

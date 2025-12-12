@@ -140,7 +140,7 @@ app.post('/api/layouts/:layoutId/restore/:checkpointId', (req, res) => {
 // Test Results API
 
 app.post('/api/test-results/reset', (req, res) => {
-    const { skipSeed } = req.body;
+    const { skipSeed, targets: reqTargets } = req.body;
 
     // 1. Clear existing results
     db.run('DELETE FROM test_results', (err) => {
@@ -151,73 +151,198 @@ app.post('/api/test-results/reset', (req, res) => {
             return res.json({ success: true, count: 0, message: 'Results cleared, seeding skipped.' });
         }
 
-        // 2. Generate Seed Data
-        const targets = [
-            { manufacturer: 'Apple', model: 'iPhone 13', capacity: 128, color: 'Midnight' },
-            { manufacturer: 'Apple', model: 'iPhone 13', capacity: 128, color: 'Midnight' }, // Extra 1
-            { manufacturer: 'Apple', model: 'iPhone 13', capacity: 128, color: 'Midnight' }, // Extra 2
-            { manufacturer: 'Apple', model: 'iPhone 13', capacity: 128, color: 'Starlight' }, // Extra 3
-            { manufacturer: 'Apple', model: 'iPhone 12 Pro', capacity: 256, color: 'Gold' },
-            { manufacturer: 'Samsung', model: 'Galaxy S22', capacity: 128, color: 'Phantom Gray' },
-            { manufacturer: 'Samsung', model: 'Galaxy A54', capacity: 128, color: 'Awesome Mint' },
-            { manufacturer: 'Google', model: 'Pixel 7', capacity: 128, color: 'Obsidian' },
-            { manufacturer: 'Google', model: 'Pixel 6a', capacity: 128, color: 'Charcoal' },
-            { manufacturer: 'Apple', model: 'iPhone 11', capacity: 64, color: 'White' },
-            { manufacturer: 'Apple', model: 'iPad 9th Gen', capacity: 64, color: 'Silver' },
-            { manufacturer: 'Samsung', model: 'Galaxy Tab A8', capacity: 32, color: 'Dark Gray' },
-            { manufacturer: 'OnePlus', model: 'Nord N100', capacity: 64, color: 'Blue' }
-        ];
-
-        function generateIMEI() {
+        // Helper to generate IMEI
+        const generateIMEI = () => {
             let imei = '35';
             for (let i = 0; i < 13; i++) {
                 imei += Math.floor(Math.random() * 10);
             }
             return imei;
+        };
+
+        // Helper to generate results
+        const generateResults = (targets) => {
+            const stmt = db.prepare(`INSERT INTO test_results (id, data, status, createdAt) VALUES (?, ?, ?, ?)`);
+            const now = new Date().toISOString();
+            const newResults = [];
+
+            // We need 4 specific outcomes based on the index of the target:
+            // 0: PASS (Perfect match)
+            // 1: PASS (Capacity Mismatch)
+            // 2: FAIL
+            // 3: PASS (Perfect match) - loop back or default
+
+            targets.forEach((t, i) => {
+                let outcomeDef;
+
+                if (i === 0) {
+                    // 1. Pass Case
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: false };
+                } else if (i === 1) {
+                    // 2. Capacity Mismatch Case, but still PASS
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: true, mismatchKey: 'capacity', mismatchVal: 999 };
+                } else if (i === 2) {
+                    // 3. Fail Case
+                    outcomeDef = { status: 'FAIL', outcome: 'Fail', mismatch: false };
+                } else {
+                    // Default/Overflow: Pass
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: false };
+                }
+
+                const id = `demo-${Date.now()}-${i}`;
+
+                const capacity = outcomeDef.mismatch && outcomeDef.mismatchKey === 'capacity'
+                    ? outcomeDef.mismatchVal
+                    : t.capacity;
+
+                // Ensure we have an IMEI for the test result
+                // If the device HAS one, we match it. If not, we generate one.
+                const resultImei = t.imei || generateIMEI();
+
+                const result = {
+                    id,
+                    timestamp: now,
+                    manufacturer: t.manufacturer,
+                    model: t.model,
+                    capacity: capacity, // Use possibly mismatched capacity
+                    color: t.color,
+                    imei: resultImei, // MATCHING IMEI
+                    status: outcomeDef.status,
+                    automated: {
+                        source: 'Manapov',
+                        runStatus: 'Completed',
+                        runOutcome: outcomeDef.outcome,
+                        runTime: now,
+                        stationId: `ST-0${i + 1}`,
+                        details: {
+                            powerOn: 'Pass',
+                            screenTouch: outcomeDef.status === 'FAIL' ? 'Fail' : 'Pass', // Correlate fail
+                            buttonsSensors: 'Pass',
+                            cameras: 'Pass',
+                            audio: 'Pass',
+                            connectivity: 'Pass',
+                            simLock: 'Unlocked',
+                            batteryHealth: 90,
+                            batteryResult: 'OK'
+                        }
+                    }
+                };
+                const dataStr = JSON.stringify(result);
+                stmt.run([id, dataStr, result.status, now]);
+                newResults.push(result);
+            });
+
+            stmt.finalize(() => {
+                io.emit('test-results-reset', newResults);
+                res.json({ success: true, count: newResults.length });
+            });
+        };
+
+        // 2. Use targets from request if available, otherwise fetch from DB
+        if (reqTargets && reqTargets.length > 0) {
+            generateResults(reqTargets);
+            return;
         }
 
-        const stmt = db.prepare(`INSERT INTO test_results (id, data, status, createdAt) VALUES (?, ?, ?, ?)`);
-        const now = new Date().toISOString();
-        const newResults = [];
+        // 3. Generate Seed Data based on actual devices in Processing bins (Fallback)
+        // Fetch current layout
+        db.get('SELECT data FROM layouts LIMIT 1', (err, row) => {
+            if (err) return res.status(500).json({ error: err.message });
 
-        targets.forEach((t, i) => {
-            const id = `demo-${Date.now()}-${i}`;
-            const result = {
-                id,
-                timestamp: now,
-                manufacturer: t.manufacturer,
-                model: t.model,
-                capacity: t.capacity,
-                color: t.color,
-                imei: generateIMEI(),
-                status: Math.random() > 0.8 ? 'FAIL' : 'PASS',
-                automated: {
-                    source: 'Manapov',
-                    runStatus: 'Completed',
-                    runOutcome: Math.random() > 0.8 ? 'Fail' : 'Pass',
-                    runTime: now,
-                    stationId: `ST-0${Math.floor(Math.random() * 5) + 1}`,
-                    details: {
-                        powerOn: 'Pass',
-                        screenTouch: Math.random() > 0.9 ? 'Fail' : 'Pass',
-                        buttonsSensors: 'Pass',
-                        cameras: 'Pass',
-                        audio: 'Pass',
-                        connectivity: 'Pass',
-                        simLock: 'Unlocked',
-                        batteryHealth: Math.floor(Math.random() * 20) + 80,
-                        batteryResult: 'OK'
+            let targets = [];
+            if (row) {
+                const layout = JSON.parse(row.data);
+                const entities = Object.values(layout.entities);
+
+                // Find potential processing bins (usually Source or Bench)
+                // We'll look for devices in 'bin_dock' or 'bin_bench' or any bin really, 
+                // but prioritizing the user's "Processing ACTIVE" description.
+                // We'll grab devices regardless of whether they have an IMEI yet (as some might be new/unserialized).
+
+                const devices = entities.filter(e => e.type === 'Device');
+
+                // Sort or filter if needed? User likely has them in a specific bin.
+                // Let's take up to 4 devices.
+                targets = devices.slice(0, 4).map(d => ({
+                    manufacturer: d.deviceAttributes ? d.deviceAttributes.manufacturer : 'Unknown',
+                    model: d.deviceAttributes ? d.deviceAttributes.model : 'Device',
+                    capacity: d.deviceAttributes ? d.deviceAttributes.capacity_gb : '0',
+                    color: d.deviceAttributes ? d.deviceAttributes.color : 'Black',
+                    imei: (d.deviceAttributes && d.deviceAttributes.imei) ? d.deviceAttributes.imei : null
+                }));
+            }
+
+            // Fallback if no devices found (shouldn't happen in demo flow, but safe to keep old logic or subsets)
+            if (targets.length === 0) {
+                // ... (keep fallback or just valid empty)
+            }
+
+            const stmt = db.prepare(`INSERT INTO test_results (id, data, status, createdAt) VALUES (?, ?, ?, ?)`);
+            const now = new Date().toISOString();
+            const newResults = [];
+
+            // We need 4 specific outcomes: 
+            // 1. PASS (Perfect)
+            // 2. PASS (Perfect)
+            // 3. PASS (Capacity Mismatch)
+            // 4. FAIL
+
+            const outcomes = [
+                { status: 'PASS', outcome: 'Pass', mismatch: false },
+                { status: 'PASS', outcome: 'Pass', mismatch: false },
+                { status: 'PASS', outcome: 'Pass', mismatch: true, mismatchKey: 'capacity', mismatchVal: 999 }, // 999 GB capacity
+                { status: 'FAIL', outcome: 'Fail', mismatch: false }
+            ];
+
+            targets.forEach((t, i) => {
+                const outcomeDef = outcomes[i % outcomes.length];
+                const id = `demo-${Date.now()}-${i}`;
+
+                const capacity = outcomeDef.mismatch && outcomeDef.mismatchKey === 'capacity'
+                    ? outcomeDef.mismatchVal
+                    : t.capacity;
+
+                // Ensure we have an IMEI for the test result, even if the device doesn't have one yet.
+                // If the device HAS one, we match it. If not, we generate one (which implies the test found this IMEI).
+                const resultImei = t.imei || generateIMEI();
+
+                const result = {
+                    id,
+                    timestamp: now,
+                    manufacturer: t.manufacturer,
+                    model: t.model,
+                    capacity: capacity, // Use possibly mismatched capacity
+                    color: t.color,
+                    imei: resultImei,
+                    status: outcomeDef.status,
+                    automated: {
+                        source: 'Manapov',
+                        runStatus: 'Completed',
+                        runOutcome: outcomeDef.outcome,
+                        runTime: now,
+                        stationId: `ST-0${i + 1}`,
+                        details: {
+                            powerOn: 'Pass',
+                            screenTouch: 'Pass',
+                            buttonsSensors: 'Pass',
+                            cameras: 'Pass',
+                            audio: 'Pass',
+                            connectivity: 'Pass',
+                            simLock: 'Unlocked',
+                            batteryHealth: 90,
+                            batteryResult: 'OK'
+                        }
                     }
-                }
-            };
-            const dataStr = JSON.stringify(result);
-            stmt.run([id, dataStr, result.status, now]);
-            newResults.push(result);
-        });
+                };
+                const dataStr = JSON.stringify(result);
+                stmt.run([id, dataStr, result.status, now]);
+                newResults.push(result);
+            });
 
-        stmt.finalize(() => {
-            io.emit('test-results-reset', newResults); // Broadcast reset event
-            res.json({ success: true, count: newResults.length });
+            stmt.finalize(() => {
+                io.emit('test-results-reset', newResults);
+                res.json({ success: true, count: newResults.length });
+            });
         });
     });
 });
