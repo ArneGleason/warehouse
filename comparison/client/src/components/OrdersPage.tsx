@@ -6,12 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, ShoppingCart, ArrowLeft, Truck, CreditCard, Package, RotateCcw, ClipboardList, Trash2 } from 'lucide-react';
+import { Plus, ShoppingCart, ArrowLeft, Truck, CreditCard, Package, RotateCcw, ClipboardList, Trash2, Receipt } from 'lucide-react';
 import { Order, OrderStatus } from '@/lib/warehouse';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { WarehouseEntity } from '@/lib/warehouse';
+import { WarehouseEntity, OrderLine, PurchaseOrder } from '@/lib/warehouse';
+import { Checkbox } from '@/components/ui/checkbox';
+
 
 function ManifestDialog({ orderId, entities }: { orderId: string, entities: Record<string, WarehouseEntity> }) {
     const allocatedDevices = Object.values(entities).filter(
@@ -74,33 +77,62 @@ function ManifestDialog({ orderId, entities }: { orderId: string, entities: Reco
     );
 }
 
-function AddLineDialog({ onSelect, availableInventory }: { onSelect: (sku: string, qty: number) => void, availableInventory: Record<string, number> }) {
-    const [open, setOpen] = useState(false);
+interface OrderLineFormData {
+    sku: string;
+    qty: number;
+    unitPrice: number;
+}
+
+function OrderLineDialog({
+    open,
+    onOpenChange,
+    onSave,
+    availableInventory,
+    initialValues
+}: {
+    open: boolean,
+    onOpenChange: (open: boolean) => void,
+    onSave: (data: OrderLineFormData) => void,
+    availableInventory: Record<string, number>,
+    initialValues?: OrderLineFormData
+}) {
     const [selectedSku, setSelectedSku] = useState<string | null>(null);
     const [qty, setQty] = useState(1);
+    const [unitPrice, setUnitPrice] = useState<string>('');
 
-    const handleAdd = () => {
-        if (selectedSku) {
-            onSelect(selectedSku, qty);
-            setOpen(false);
+    // Load initial values when dialog opens
+    useEffect(() => {
+        if (open && initialValues) {
+            setSelectedSku(initialValues.sku);
+            setQty(initialValues.qty);
+            setUnitPrice(initialValues.unitPrice.toString());
+        } else if (open) {
+            // Reset for Add mode
             setSelectedSku(null);
             setQty(1);
+            setUnitPrice('');
+        }
+    }, [open, initialValues]);
+
+    const handleSave = () => {
+        if (selectedSku) {
+            const price = parseFloat(unitPrice);
+            if (isNaN(price)) {
+                alert("Please enter a valid unit price");
+                return;
+            }
+            onSave({ sku: selectedSku, qty, unitPrice: price });
+            onOpenChange(false);
         }
     };
 
     const skus = Object.entries(availableInventory).map(([sku, count]) => ({ sku, count }));
 
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Line
-                </Button>
-            </DialogTrigger>
+        <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>Add Order Line</DialogTitle>
+                    <DialogTitle>{initialValues ? 'Edit Order Line' : 'Add Order Line'}</DialogTitle>
                 </DialogHeader>
                 <div className="flex gap-4 h-[400px]">
                     <div className="flex-1 border rounded-md">
@@ -145,14 +177,164 @@ function AddLineDialog({ onSelect, availableInventory }: { onSelect: (sku: strin
                             <Input
                                 type="number"
                                 min={1}
-                                max={selectedSku ? availableInventory[selectedSku] : 1}
                                 value={qty}
                                 onChange={(e) => setQty(parseInt(e.target.value) || 1)}
                                 disabled={!selectedSku}
                             />
                         </div>
+                        <div className="space-y-2">
+                            <Label>Unit Price ($)</Label>
+                            <Input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                value={unitPrice}
+                                onChange={(e) => setUnitPrice(e.target.value)}
+                                placeholder="0.00"
+                                disabled={!selectedSku}
+                            />
+                        </div>
                         <div className="flex-1" />
-                        <Button onClick={handleAdd} disabled={!selectedSku}>Add to Order</Button>
+                        <Button onClick={handleSave} disabled={!selectedSku}>
+                            {initialValues ? 'Save Changes' : 'Add to Order'}
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function ImportFromPODialog({
+    open,
+    onOpenChange,
+    purchaseOrders,
+    onImport
+}: {
+    open: boolean,
+    onOpenChange: (open: boolean) => void,
+    purchaseOrders: PurchaseOrder[],
+    onImport: (items: { sku: string, qty: number, poId: string, poLineId: string }[]) => void
+}) {
+    const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+    const [selectedLines, setSelectedLines] = useState<Record<string, boolean>>({});
+
+    const validPos = purchaseOrders.filter(po => po.status === 'Issued' || po.status === 'Receiving');
+    const selectedPo = selectedPoId ? purchaseOrders.find(po => po.id === selectedPoId) : null;
+
+    // Reset selection when PO changes
+    useEffect(() => {
+        if (selectedPo) {
+            const allSelected: Record<string, boolean> = {};
+            selectedPo.lines.forEach(line => {
+                allSelected[line.id] = true;
+            });
+            setSelectedLines(allSelected);
+        } else {
+            setSelectedLines({});
+        }
+    }, [selectedPoId]);
+
+    const handleImport = () => {
+        if (!selectedPo) return;
+
+        const itemsToImport = selectedPo.lines
+            .filter(line => selectedLines[line.id])
+            .map(line => ({
+                sku: line.itemSku,
+                qty: line.qty,
+                poId: selectedPo.id,
+                poLineId: line.id
+            }));
+
+        onImport(itemsToImport);
+        onOpenChange(false);
+        setSelectedPoId(null);
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                    <DialogTitle>Import from Purchase Order</DialogTitle>
+                </DialogHeader>
+                <div className="flex flex-col gap-4 h-[500px]">
+                    <div className="w-[300px]">
+                        <Label>Select Purchase Order</Label>
+                        <Select value={selectedPoId || ''} onValueChange={setSelectedPoId}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select PO..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {validPos.length === 0 ? (
+                                    <SelectItem value="none" disabled>No valid POs found</SelectItem>
+                                ) : (
+                                    validPos.map(po => (
+                                        <SelectItem key={po.id} value={po.id}>
+                                            {po.poNumber} ({po.status}) - {po.lines.length} items
+                                        </SelectItem>
+                                    ))
+                                )}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="flex-1 border rounded-md overflow-hidden flex flex-col">
+                        <div className="p-2 bg-muted/20 border-b flex justify-between items-center text-sm px-4">
+                            <span className="font-semibold">Items in PO</span>
+                            {selectedPo && (
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="ghost" onClick={() => {
+                                        const allConfig: Record<string, boolean> = {};
+                                        selectedPo.lines.forEach(l => allConfig[l.id] = true);
+                                        setSelectedLines(allConfig);
+                                    }}>Select All</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => setSelectedLines({})}>Deselect All</Button>
+                                </div>
+                            )}
+                        </div>
+                        <ScrollArea className="flex-1">
+                            {!selectedPo ? (
+                                <div className="h-full flex items-center justify-center text-muted-foreground">
+                                    Please select a PO to view items.
+                                </div>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="w-[50px]"></TableHead>
+                                            <TableHead>SKU</TableHead>
+                                            <TableHead className="text-right">PO Qty</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {selectedPo.lines.map(line => (
+                                            <TableRow
+                                                key={line.id}
+                                                onClick={() => setSelectedLines(prev => ({ ...prev, [line.id]: !prev[line.id] }))}
+                                                className="cursor-pointer hover:bg-muted/50"
+                                            >
+                                                <TableCell onClick={e => e.stopPropagation()}>
+                                                    <Checkbox
+                                                        checked={!!selectedLines[line.id]}
+                                                        onCheckedChange={(checked) => setSelectedLines(prev => ({ ...prev, [line.id]: !!checked }))}
+                                                    />
+                                                </TableCell>
+                                                <TableCell className="font-mono">{line.itemSku}</TableCell>
+                                                <TableCell className="text-right">{line.qty}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </ScrollArea>
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                        <Button onClick={handleImport} disabled={!selectedPo || Object.values(selectedLines).every(v => !v)}>
+                            Import Items
+                        </Button>
                     </div>
                 </div>
             </DialogContent>
@@ -165,6 +347,11 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
     const { state, updateOrder, getSellableInventory, allocateDevices, deleteOrder, removeOrderLine, shipOrder } = useWarehouse();
     const order = state.orders[orderId];
     const [deleteOrderOpen, setDeleteOrderOpen] = useState(false);
+
+    // Line Editing State
+    const [processDialogOpen, setProcessDialogOpen] = useState(false);
+    const [importPoDialogOpen, setImportPoDialogOpen] = useState(false);
+    const [editingLine, setEditingLine] = useState<OrderLine | null>(null);
 
     // Local state for form fields to prevent excessive context updates on every keystroke
     // We'll sync on blur or "Save"
@@ -196,35 +383,75 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
         saveChanges();
     };
 
-    const handleAddLine = (sku: string, qty: number) => {
-        // 1. Allocate Devices first
-        // TODO: Handle failure if not enough
-        const allocatedIds = allocateDevices(order.id, order.orderNumber, order.buyer.name, sku, qty);
-
-        if (allocatedIds.length < qty) {
-            // Should alert - but UI constraints for now
-            console.warn("Could not allocate all requested devices");
-        }
-
-        // 2. Update Order Lines
-        const existingLineIndex = order.lines.findIndex(l => l.skuId === sku);
+    const handleSaveLine = (data: OrderLineFormData) => {
         let newLines = [...order.lines];
 
-        if (existingLineIndex >= 0) {
-            newLines[existingLineIndex] = {
-                ...newLines[existingLineIndex],
-                qty: newLines[existingLineIndex].qty + qty
-            };
+        if (editingLine) {
+            // Edit Mode: Update existing line
+            const index = newLines.findIndex(l => l.id === editingLine.id);
+            if (index >= 0) {
+                newLines[index] = {
+                    ...newLines[index],
+                    skuId: data.sku,
+                    skuDisplay: state.items[data.sku]?.model || data.sku,
+                    qty: data.qty,
+                    unitPrice: data.unitPrice
+                };
+            }
         } else {
-            newLines.push({
-                id: `line-${Date.now()}`,
-                orderId: order.id,
-                skuId: sku,
-                skuDisplay: state.items[sku]?.model || sku,
-                qty: qty,
-                unitPrice: 0 // placeholder
-            });
+            // Add Mode: Update Order Lines (Merge if exists, else add)
+            const existingLineIndex = order.lines.findIndex(l => l.skuId === data.sku && l.unitPrice === data.unitPrice);
+
+            if (existingLineIndex >= 0) {
+                newLines[existingLineIndex] = {
+                    ...newLines[existingLineIndex],
+                    qty: newLines[existingLineIndex].qty + data.qty
+                };
+            } else {
+                newLines.push({
+                    id: `line-${Date.now()}`,
+                    orderId: order.id,
+                    skuId: data.sku,
+                    skuDisplay: state.items[data.sku]?.model || data.sku,
+                    qty: data.qty,
+                    unitPrice: data.unitPrice
+                });
+            }
         }
+
+        updateOrder(order.id, { lines: newLines });
+    };
+
+    const handleImportFromPo = (items: { sku: string, qty: number, poId: string, poLineId: string }[]) => {
+        let newLines = [...order.lines];
+
+        items.forEach(item => {
+            // Check if exact same line exists (SKU + UnitPrice 0 + Same PO Line Promise)
+            const existingIndex = newLines.findIndex(l =>
+                l.skuId === item.sku &&
+                l.unitPrice === 0 &&
+                l.promisedPoId === item.poId &&
+                l.promisedPoLineId === item.poLineId
+            );
+
+            if (existingIndex >= 0) {
+                newLines[existingIndex] = {
+                    ...newLines[existingIndex],
+                    qty: newLines[existingIndex].qty + item.qty
+                };
+            } else {
+                newLines.push({
+                    id: `line-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                    orderId: order.id,
+                    skuId: item.sku,
+                    skuDisplay: state.items[item.sku]?.model || item.sku,
+                    qty: item.qty,
+                    unitPrice: 0,
+                    promisedPoId: item.poId,
+                    promisedPoLineId: item.poLineId
+                });
+            }
+        });
 
         updateOrder(order.id, { lines: newLines });
     };
@@ -239,6 +466,20 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
             if (order.lines.length === 0) {
                 alert("Validation Error: Order must have at least one line item.");
                 return;
+            }
+        }
+
+        // Check allocations for Picking and Shipping
+        if (newStatus === 'Shipped') {
+            const allocatedDeviceCount = Object.values(state.entities).filter(
+                e => e.type === 'Device' && e.deviceAttributes?.allocatedToOrder?.orderId === orderId
+            ).length;
+            const totalOrderedQty = order.lines.reduce((sum, line) => sum + line.qty, 0);
+
+            if (allocatedDeviceCount < totalOrderedQty) {
+                if (!confirm(`Warning: Only ${allocatedDeviceCount} of ${totalOrderedQty} items are allocated. Do you want to ship this partial order?`)) {
+                    return;
+                }
             }
         }
 
@@ -427,8 +668,37 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Order Lines</CardTitle>
                             {order.status === 'Draft' && (
-                                <AddLineDialog onSelect={handleAddLine} availableInventory={sellableInventory} />
+                                <div className="flex gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => setImportPoDialogOpen(true)}>
+                                        <ClipboardList className="h-4 w-4 mr-2" />
+                                        Import from PO
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => {
+                                        setEditingLine(null);
+                                        setProcessDialogOpen(true);
+                                    }}>
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Add Line
+                                    </Button>
+                                </div>
                             )}
+                            <ImportFromPODialog
+                                open={importPoDialogOpen}
+                                onOpenChange={setImportPoDialogOpen}
+                                purchaseOrders={Object.values(state.purchaseOrders)}
+                                onImport={handleImportFromPo}
+                            />
+                            <OrderLineDialog
+                                open={processDialogOpen}
+                                onOpenChange={setProcessDialogOpen}
+                                onSave={handleSaveLine}
+                                availableInventory={sellableInventory}
+                                initialValues={editingLine ? {
+                                    sku: editingLine.skuId,
+                                    qty: editingLine.qty,
+                                    unitPrice: editingLine.unitPrice || 0
+                                } : undefined}
+                            />
                         </CardHeader>
                         <CardContent className="flex-1 overflow-y-auto">
                             {order.lines.length === 0 ? (
@@ -436,39 +706,85 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
                                     No items added yet.
                                 </div>
                             ) : (
-                                <div className="space-y-2">
-                                    {order.lines.map(line => (
-                                        <div key={line.id} className="flex items-center justify-between p-3 border rounded-md">
-                                            <div>
-                                                <div className="font-medium">{line.skuDisplay}</div>
-                                                <div className="text-xs text-muted-foreground">{line.skuId}</div>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <div className="text-sm font-semibold">Qty: {line.qty}</div>
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Item</TableHead>
+                                            <TableHead className="text-right">Qty</TableHead>
+                                            <TableHead className="text-right">Unit Price</TableHead>
+                                            <TableHead className="text-right">Line Total</TableHead>
+                                            {order.status === 'Draft' && <TableHead className="w-[50px]"></TableHead>}
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {order.lines.map(line => (
+                                            <TableRow
+                                                key={line.id}
+                                                className={order.status === 'Draft' ? "cursor-pointer hover:bg-muted/50" : ""}
+                                                onClick={() => {
+                                                    if (order.status === 'Draft') {
+                                                        setEditingLine(line);
+                                                        setProcessDialogOpen(true);
+                                                    }
+                                                }}
+                                            >
+                                                <TableCell>
+                                                    <div className="font-medium">{line.skuDisplay}</div>
+                                                    <div className="text-xs text-muted-foreground">{line.skuId}</div>
+                                                    {line.promisedPoId && (
+                                                        <div className="mt-1">
+                                                            <div className="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-indigo-100 text-indigo-800 hover:bg-indigo-200">
+                                                                Promised from {state.purchaseOrders[line.promisedPoId]?.poNumber || 'Unknown PO'}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right">{line.qty}</TableCell>
+                                                <TableCell className="text-right">
+                                                    {line.unitPrice !== undefined
+                                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(line.unitPrice)
+                                                        : '-'}
+                                                </TableCell>
+                                                <TableCell className="text-right font-medium">
+                                                    {line.unitPrice !== undefined
+                                                        ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(line.qty * line.unitPrice)
+                                                        : '-'}
+                                                </TableCell>
                                                 {order.status === 'Draft' && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                                        onClick={() => {
-                                                            if (confirm(`Remove line ${line.skuDisplay}?`)) {
-                                                                removeOrderLine(orderId, line.id);
-                                                            }
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    <TableCell>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm(`Remove line ${line.skuDisplay}?`)) {
+                                                                    removeOrderLine(orderId, line.id);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    </TableCell>
                                                 )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
                             )}
                         </CardContent>
-                        <div className="p-4 border-t bg-muted/5">
-                            <div className="flex justify-between items-center text-sm font-medium">
-                                <span>Total Items:</span>
+                        <div className="p-4 border-t bg-muted/5 flex flex-col gap-2">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-muted-foreground">Total Items:</span>
                                 <span>{order.lines.reduce((sum, line) => sum + line.qty, 0)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-lg font-bold">
+                                <span>Order Total:</span>
+                                <span>
+                                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+                                        order.lines.reduce((sum, line) => sum + (line.qty * (line.unitPrice || 0)), 0)
+                                    )}
+                                </span>
                             </div>
                         </div>
                     </Card>
@@ -477,6 +793,8 @@ function OrderDetails({ orderId, onBack }: { orderId: string; onBack: () => void
         </div>
     );
 }
+
+
 
 export function OrdersPage() {
     const { state, addOrder, updateOrder } = useWarehouse();
@@ -515,6 +833,9 @@ export function OrdersPage() {
     };
 
     if (selectedOrderId) {
+        const selectedOrder = state.orders[selectedOrderId];
+
+
         return (
             <div className="h-full p-6 bg-slate-50 dark:bg-slate-950/50">
                 <OrderDetails orderId={selectedOrderId} onBack={() => setSelectedOrderId(null)} />
@@ -527,7 +848,7 @@ export function OrdersPage() {
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-bold flex items-center gap-2">
-                        <ShoppingCart className="h-6 w-6" />
+                        <Receipt className="h-6 w-6" />
                         Sales Orders
                     </h1>
                     <p className="text-muted-foreground">Manage draft orders and shipments</p>
@@ -540,7 +861,7 @@ export function OrdersPage() {
 
             {/* Filters */}
             <div className="flex gap-2">
-                {(['All', 'Draft', 'Ready for Payment', 'Ready for Picking', 'Shipped'] as const).map(status => (
+                {(['All', 'Draft', 'Ready for Payment', 'Ready for Picking', 'Ready for Packing', 'Shipped'] as const).map(status => (
                     <Button
                         key={status}
                         variant={statusFilter === status ? 'secondary' : 'outline'}
@@ -574,7 +895,8 @@ export function OrdersPage() {
                                             order.status === 'Ready for Picking' ? 'default' : 'default'
                                 } className={
                                     order.status === 'Ready for Picking' ? 'bg-amber-500 hover:bg-amber-600' :
-                                        order.status === 'Shipped' ? 'bg-green-600 hover:bg-green-700' : ''
+                                        order.status === 'Ready for Packing' ? 'bg-blue-600 hover:bg-blue-700' :
+                                            order.status === 'Shipped' ? 'bg-green-600 hover:bg-green-700' : ''
                                 }>
                                     {order.status}
                                 </Badge>

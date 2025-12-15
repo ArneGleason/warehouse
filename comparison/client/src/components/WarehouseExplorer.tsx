@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { HierarchyView } from '@/components/HierarchyView';
 import { PropertiesPanel } from '@/components/PropertiesPanel';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import { Map } from 'lucide-react';
 
 interface WarehouseExplorerProps {
     selectedIds: Set<string>;
@@ -14,7 +15,10 @@ export function WarehouseExplorer({ selectedIds, onSelect }: WarehouseExplorerPr
     return (
         <div className="h-full w-full flex flex-col overflow-hidden">
             <header className="h-12 border-b flex items-center px-4 shrink-0 bg-background">
-                <h1 className="font-bold text-lg">PXW-P-2</h1>
+                <h1 className="font-bold text-lg flex items-center gap-2">
+                    <Map className="h-5 w-5" />
+                    Warehouse Explorer
+                </h1>
                 <div className="ml-auto flex items-center gap-2">
                     {/* Toolbar items can go here */}
                 </div>

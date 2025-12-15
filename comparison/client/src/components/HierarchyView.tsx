@@ -1310,6 +1310,36 @@ export function HierarchyView({ onSelect, selectedIds, grouping, setGrouping }: 
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [isAddDeptOpen, setIsAddDeptOpen] = useState(false);
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['warehouse_root'])); // Default expand root
+    const [isInitialized, setIsInitialized] = useState(false);
+
+    // Persistence for expandedIds
+    React.useEffect(() => {
+        const loadState = () => {
+            try {
+                const saved = localStorage.getItem('warehouse-explorer-expanded');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        setExpandedIds(new Set(parsed));
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load expansion state", e);
+            } finally {
+                setIsInitialized(true);
+            }
+        };
+        loadState();
+    }, []);
+
+    React.useEffect(() => {
+        if (!isInitialized) return;
+        try {
+            localStorage.setItem('warehouse-explorer-expanded', JSON.stringify(Array.from(expandedIds)));
+        } catch (e) {
+            console.error("Failed to save expansion state", e);
+        }
+    }, [expandedIds, isInitialized]);
     const [quickMoveIds, setQuickMoveIds] = useState<Set<string> | null>(null);
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [dragOverId, setDragOverId] = useState<string | null>(null);

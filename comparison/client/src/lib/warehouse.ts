@@ -39,6 +39,7 @@ export interface DeviceAttributes {
         orderNumber: string;
         buyerName: string;
         allocatedAt: string;
+        pickedAt?: string; // Distinguishes "Promised/Allocated" from "Verified Picked"
     };
 }
 
@@ -86,6 +87,23 @@ export interface ItemDefinition {
     vendorSkus: string[]; // IDs of VendorSku entities
     createdAt: string;
     updatedAt: string;
+    base_sku_id?: string; // ID grouping variants that only differ by grade
+}
+
+export function generateBaseSkuId(item: Partial<ItemDefinition>): string {
+    const parts = [
+        item.manufacturer,
+        item.model,
+        item.modelNumber,
+        item.capacity_gb,
+        item.color,
+        item.carrier,
+        item.lockStatus,
+        item.serialized ? 'S' : 'NS'
+    ].map(p => (p || '').toString().trim().toUpperCase());
+
+    // Hash or simply join. Joining is readable.
+    return parts.join('|');
 }
 
 export interface VendorSku {
@@ -111,13 +129,62 @@ export interface WarehouseState {
     processingSourceBinId?: string | null;
     processingDestBinId?: string | null;
     processingExceptionBinId?: string | null;
+    receivingBinId?: string | null;
 
     // Orders
     orders: Record<string, Order>;
     orderCounter: number;
+
+    // Vendors
+    vendors: Record<string, Vendor>;
+    vendorCounter: number;
+
+    // Purchase Orders
+    purchaseOrders: Record<string, PurchaseOrder>;
+    poCounter: number;
 }
 
-export type OrderStatus = 'Draft' | 'Ready for Payment' | 'Ready for Picking' | 'Shipped';
+export type OrderStatus = 'Draft' | 'Ready for Payment' | 'Ready for Picking' | 'Ready for Packing' | 'Shipped' | 'Canceled';
+
+export interface Vendor {
+    id: string;
+    vendorCode: string; // Readable ID e.g. VND-1001
+    name: string;
+    address?: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    whatsapp?: string;
+    website?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+export type PurchaseOrderStatus = 'Draft' | 'Issued' | 'Receiving' | 'Done' | 'Canceled';
+
+export interface PurchaseOrderLine {
+    id: string;
+    poId: string;
+    itemSku: string; // The internal SKU (required)
+    vendorSku?: string; // Examples: "V-IPH-13" (optional)
+    itemSkuDescription?: string; // Snapshot description
+    vendorSkuDescription?: string; // Snapshot description
+    qty: number;
+    receivedQty?: number;
+    unitPrice: number;
+    lineTotal: number;
+}
+
+export interface PurchaseOrder {
+    id: string;
+    poNumber: string; // e.g. PO-1001
+    vendorId: string;
+    status: PurchaseOrderStatus;
+    expectedDate?: string;
+    notes?: string;
+    lines: PurchaseOrderLine[];
+    createdAt: string;
+    updatedAt: string;
+}
 
 export interface OrderLine {
     id: string;
@@ -126,6 +193,9 @@ export interface OrderLine {
     skuDisplay: string; // Cached label
     qty: number;
     unitPrice?: number;
+    // Promise System
+    promisedPoId?: string;
+    promisedPoLineId?: string;
 }
 
 export interface Order {

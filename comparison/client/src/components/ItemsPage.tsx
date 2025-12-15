@@ -27,7 +27,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { Plus, Search, Upload, Download, Filter, X, ChevronLeft, Save, Wand2, Copy } from 'lucide-react';
+import { Plus, Search, Upload, Download, Filter, X, ChevronLeft, Save, Wand2, Copy, Library, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { ItemDefinition } from '@/lib/warehouse';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,26 +35,32 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { VendorSkusTab } from './VendorSkusTab';
 
+import { CreateGradeVariantsDialog } from './CreateGradeVariantsDialog';
+
 // --- Sub-components (could be split if large) ---
 
 function ItemsList({
     items,
     onCreate,
-    onEdit
+    onEdit,
+    onBatchCreate
 }: {
     items: ItemDefinition[],
     onCreate: () => void,
-    onEdit: (sku: string) => void
+    onEdit: (sku: string) => void,
+    onBatchCreate: (newItems: ItemDefinition[]) => Promise<void>
 }) {
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
     const [serializedFilter, setSerializedFilter] = useState<string>('ALL');
     const [statusFilter, setStatusFilter] = useState<string>('ACTIVE');
     const [selectedSkus, setSelectedSkus] = useState<Set<string>>(new Set());
+    const [isVariantDialogOpen, setIsVariantDialogOpen] = useState(false);
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
     // Filter Logic
     const filteredItems = useMemo(() => {
-        return items.filter(item => {
+        let result = items.filter(item => {
             // Search
             if (searchTerm && !item.sku.toLowerCase().includes(searchTerm.toLowerCase()) &&
                 !item.manufacturer.toLowerCase().includes(searchTerm.toLowerCase()) &&
@@ -75,7 +81,25 @@ function ItemsList({
             }
             return true;
         });
-    }, [items, searchTerm, categoryFilter, serializedFilter, statusFilter]);
+
+        // Sort Logic
+        if (sortConfig) {
+            result.sort((a, b) => {
+                const aValue = (a as any)[sortConfig.key];
+                const bValue = (b as any)[sortConfig.key];
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+
+        return result;
+    }, [items, searchTerm, categoryFilter, serializedFilter, statusFilter, sortConfig]);
 
     // Unique Categories for Filter
     const categories = useMemo(() => {
@@ -98,20 +122,61 @@ function ItemsList({
         }
     };
 
+    const requestSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const SortableHeader = ({ label, sortKey }: { label: string, sortKey: string }) => {
+        const isActive = sortConfig?.key === sortKey;
+        return (
+            <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => requestSort(sortKey)}>
+                <div className="flex items-center gap-1">
+                    {label}
+                    {isActive ? (
+                        sortConfig.direction === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                    ) : (
+                        <ArrowUpDown className="h-4 w-4 opacity-0 hover:opacity-50 group-hover:opacity-50" />
+                    )}
+                </div>
+            </TableHead>
+        );
+    };
+
     return (
         <div className="h-full flex flex-col space-y-4 p-6">
             {/* Header / Actions */}
             <div className="flex justify-between items-start">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Items</h1>
+                    <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+                        <Library className="h-6 w-6" />
+                        Items
+                    </h1>
                     <p className="text-muted-foreground">Manage inventory SKU definitions.</p>
                 </div>
                 <div className="flex gap-2">
+                    {selectedSkus.size > 0 && (
+                        <Button variant="secondary" size="sm" onClick={() => setIsVariantDialogOpen(true)}>
+                            <Wand2 className="w-4 h-4 mr-2" />
+                            Create Grade Variants
+                        </Button>
+                    )}
                     <Button variant="outline" size="sm"><Upload className="w-4 h-4 mr-2" /> Import</Button>
                     <Button variant="outline" size="sm"><Download className="w-4 h-4 mr-2" /> Export</Button>
                     <Button size="sm" onClick={onCreate}><Plus className="w-4 h-4 mr-2" /> Add New Item</Button>
                 </div>
             </div>
+
+            <CreateGradeVariantsDialog
+                isOpen={isVariantDialogOpen}
+                onClose={() => setIsVariantDialogOpen(false)}
+                selectedSkus={selectedSkus}
+                items={items}
+                onConfirm={onBatchCreate}
+            />
 
             {/* Filters */}
             <div className="flex gap-2 items-center flex-wrap">
@@ -163,6 +228,7 @@ function ItemsList({
                         setCategoryFilter('ALL');
                         setSerializedFilter('ALL');
                         setStatusFilter('ACTIVE');
+                        setSortConfig(null);
                     }}>
                         <X className="w-4 h-4 mr-2" /> Clear
                     </Button>
@@ -180,13 +246,13 @@ function ItemsList({
                                     onChange={toggleSelectAll}
                                 />
                             </TableHead>
-                            <TableHead>SKU / Description</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Manufacturer</TableHead>
-                            <TableHead>Model</TableHead>
-                            <TableHead>Grade</TableHead>
-                            <TableHead>Serialized</TableHead>
-                            <TableHead>Status</TableHead>
+                            <SortableHeader label="SKU / Description" sortKey="sku" />
+                            <SortableHeader label="Category" sortKey="category" />
+                            <SortableHeader label="Manufacturer" sortKey="manufacturer" />
+                            <SortableHeader label="Model" sortKey="model" />
+                            <SortableHeader label="Grade" sortKey="grade" />
+                            <SortableHeader label="Serialized" sortKey="serialized" />
+                            <SortableHeader label="Status" sortKey="active" />
                             <TableHead className="text-right">Action</TableHead>
                         </TableRow>
                     </TableHeader>
@@ -268,12 +334,16 @@ function ItemEditor({
     initialData,
     onSave,
     onCancel,
-    existingSkus
+    existingSkus,
+    items, // All items for sibling lookup
+    onSwitchItem // Callback to switch editor to another SKU
 }: {
     initialData?: ItemDefinition,
     onSave: (data: ItemDefinition) => void,
     onCancel: () => void,
-    existingSkus: Set<string>
+    existingSkus: Set<string>,
+    items: ItemDefinition[],
+    onSwitchItem: (sku: string) => void
 }) {
     const isEdit = !!initialData;
     const [formData, setFormData] = useState<ItemDefinition>(initialData || {
@@ -380,6 +450,15 @@ function ItemEditor({
         }
     };
 
+    // Calculate siblings
+    const siblings = useMemo(() => {
+        if (!formData.base_sku_id) return [];
+        return items.filter(i =>
+            i.base_sku_id === formData.base_sku_id &&
+            i.sku !== formData.sku // Exclude self
+        ).sort((a, b) => a.grade.localeCompare(b.grade)); // Sort by grade
+    }, [formData.base_sku_id, formData.sku, items]);
+
     return (
         <div className="h-full flex flex-col p-6">
             <div className="flex justify-between items-center mb-6">
@@ -400,8 +479,62 @@ function ItemEditor({
             <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
                 <TabsList>
                     <TabsTrigger value="details">Item Details</TabsTrigger>
+                    {formData.base_sku_id && <TabsTrigger value="variants">Grade Variants</TabsTrigger>}
                     <TabsTrigger value="vendor" disabled={!isEdit}>Vendor SKUs</TabsTrigger>
                 </TabsList>
+
+                <TabsContent value="variants" className="flex-1 overflow-auto border rounded-md p-6 bg-card">
+                    <div className="max-w-4xl space-y-6">
+                        <div className="p-4 bg-muted/30 rounded-md border">
+                            <Label className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Identity Group ID</Label>
+                            <p className="mt-1 font-mono text-sm break-all">{formData.base_sku_id}</p>
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-medium mb-4">Sibling SKUs</h3>
+                            {siblings.length === 0 ? (
+                                <p className="text-muted-foreground italic">No other variants found.</p>
+                            ) : (
+                                <div className="border rounded-md">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Grade</TableHead>
+                                                <TableHead>SKU</TableHead>
+                                                <TableHead className="text-right">Action</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {siblings.map(sib => (
+                                                <TableRow key={sib.sku}>
+                                                    <TableCell><Badge variant="outline">{sib.grade}</Badge></TableCell>
+                                                    <TableCell className="font-mono text-sm">{sib.sku}</TableCell>
+                                                    <TableCell className="text-right">
+                                                        <Button
+                                                            variant="secondary"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                if (isDirty) {
+                                                                    if (confirm('Discard unsaved changes?')) {
+                                                                        onSwitchItem(sib.sku);
+                                                                    }
+                                                                } else {
+                                                                    onSwitchItem(sib.sku);
+                                                                }
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </TabsContent>
 
                 <TabsContent value="details" className="flex-1 overflow-auto border rounded-md p-6 bg-card">
                     <div className="grid grid-cols-2 gap-6 max-w-4xl">
@@ -618,7 +751,7 @@ function ItemEditor({
 // --- Main Page Component ---
 
 export function ItemsPage() {
-    const { state, addItem, updateItem } = useWarehouse();
+    const { state, addItem, addItems, updateItem } = useWarehouse();
     const [view, setView] = useState<'LIST' | 'CREATE' | 'EDIT'>('LIST');
     const [editSku, setEditSku] = useState<string | null>(null);
 
@@ -657,18 +790,33 @@ export function ItemsPage() {
         }
     };
 
+    // Batch Create Logic
+    // We pass this down to ItemsList which manages the selection state
+    const handleBatchCreate = async (newItems: ItemDefinition[]) => {
+        addItems(newItems);
+        toast.success(`Created ${newItems.length} grade variants.`);
+    };
+
     if (view === 'LIST') {
-        return <ItemsList items={items} onCreate={handleCreate} onEdit={handleEdit} />;
+        return <ItemsList
+            items={items}
+            onCreate={handleCreate}
+            onEdit={handleEdit}
+            onBatchCreate={handleBatchCreate}
+        />;
     }
 
-    const initialData = view === 'EDIT' && editSku ? state.items[editSku] : undefined;
-
-    return (
-        <ItemEditor
-            initialData={initialData}
-            onSave={handleSaveItem}
-            onCancel={handleBack}
-            existingSkus={existingSkus}
-        />
-    );
+    if (view === 'CREATE' || view === 'EDIT') {
+        const initialData = view === 'EDIT' && editSku ? state.items[editSku] : undefined;
+        return (
+            <ItemEditor
+                initialData={initialData}
+                items={items} // Pass all items
+                onSave={handleSaveItem} // Assuming handleSaveItem is the intended save function
+                onCancel={() => setView('LIST')}
+                existingSkus={new Set(Object.keys(state.items))}
+                onSwitchItem={handleEdit} // Allow switching
+            />
+        );
+    }
 }

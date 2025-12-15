@@ -3,13 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import { useWarehouse } from '@/components/context/WarehouseContext';
-import { ENTITY_CONFIG, WarehouseEntity, DeviceAttributes } from '@/lib/warehouse';
+import { ENTITY_CONFIG, WarehouseEntity, DeviceAttributes, ItemDefinition } from '@/lib/warehouse';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import * as Icons from 'lucide-react';
-import { getEntityHistory, ActionLog } from '@/lib/history';
+import { getEntityHistory, ActionLog, logAction } from '@/lib/history';
 import { cn } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
@@ -254,14 +254,36 @@ function HistoryTable({ entityId }: { entityId: string }) {
                             </TableRow>
                         ) : (
                             filteredHistory.map((log) => (
-                                <TableRow key={log.id}>
+                                <TableRow key={log.id}
+                                    className={cn(
+                                        log.actionType === 'TRANSFORM' ? "bg-blue-50/50 dark:bg-blue-900/10" : "",
+                                        log.details.includes('Status changed') ? "bg-yellow-50/50 dark:bg-yellow-900/10" : ""
+                                    )}
+                                >
                                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                                         {new Date(log.timestamp).toLocaleString()}
                                     </TableCell>
                                     <TableCell className="font-medium text-xs">
-                                        <Badge variant="outline">{log.actionType}</Badge>
+                                        <Badge variant={
+                                            log.actionType === 'TRANSFORM' ? 'default' :
+                                                log.actionType === 'CREATE' ? 'outline' :
+                                                    'secondary'
+                                        } className={cn(
+                                            log.actionType === 'TRANSFORM' && "bg-blue-600 hover:bg-blue-700",
+                                            log.details.includes('Status changed') && "bg-yellow-600 hover:bg-yellow-700 text-white"
+                                        )}>
+                                            {log.actionType}
+                                        </Badge>
                                     </TableCell>
-                                    <TableCell className="text-xs">{log.details}</TableCell>
+                                    <TableCell className="text-xs">
+                                        {log.actionType === 'TRANSFORM' ? (
+                                            <span className="font-medium text-blue-700 dark:text-blue-300">
+                                                {log.details}
+                                            </span>
+                                        ) : (
+                                            log.details
+                                        )}
+                                    </TableCell>
                                 </TableRow>
                             ))
                         )}
@@ -269,6 +291,145 @@ function HistoryTable({ entityId }: { entityId: string }) {
                 </Table>
             </div>
         </div>
+    );
+}
+
+
+function SkuTransformDialog({
+    isOpen,
+    onClose,
+    currentSku,
+    items,
+    onSave
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    currentSku: string | null;
+    items: Record<string, ItemDefinition>;
+    onSave: (newSku: string) => void;
+}) {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
+
+    // Filter siblings (variants)
+    const baseSkuId = currentSku ? items[currentSku]?.base_sku_id : null;
+    const variants = React.useMemo(() => {
+        if (!baseSkuId) return [];
+        return Object.values(items).filter(i =>
+            i.base_sku_id === baseSkuId &&
+            i.sku !== currentSku
+        ).sort((a, b) => a.grade.localeCompare(b.grade));
+    }, [items, baseSkuId, currentSku]);
+
+    // Search results
+    const searchResults = React.useMemo(() => {
+        if (!searchTerm) return [];
+        const term = searchTerm.toLowerCase();
+        return Object.values(items)
+            .filter(i =>
+                (i.sku.toLowerCase().includes(term) ||
+                    i.model.toLowerCase().includes(term)) &&
+                i.sku !== currentSku &&
+                i.base_sku_id !== baseSkuId // Exclude explicit variants as they are already shown
+            )
+            .slice(0, 50); // Limit results
+    }, [items, searchTerm, currentSku, baseSkuId]);
+
+    const handleSelect = (sku: string) => {
+        onSave(sku);
+        onClose();
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Transform Device SKU</DialogTitle>
+                    <DialogDescription>
+                        Select a grade variant or search for a new SKU.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6 py-4">
+                    {/* Current Info */}
+                    <div className="bg-muted p-3 rounded-md flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Current:</span>
+                        <div className="font-mono font-medium">
+                            {currentSku || 'No SKU'}
+                            {currentSku && items[currentSku] && <span className="ml-2 px-1.5 py-0.5 bg-background border rounded text-xs">{items[currentSku].grade}</span>}
+                        </div>
+                    </div>
+
+                    {/* Variants Section */}
+                    {variants.length > 0 && (
+                        <div className="space-y-3">
+                            <h4 className="text-sm font-semibold flex items-center gap-2">
+                                <Icons.Layers className="h-4 w-4" />
+                                Grade Variants
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                {variants.map(variant => (
+                                    <Button
+                                        key={variant.sku}
+                                        variant="outline"
+                                        className="justify-start h-auto py-2 px-3 text-left"
+                                        onClick={() => handleSelect(variant.sku)}
+                                    >
+                                        <div className="flex flex-col items-start w-full">
+                                            <div className="flex items-center justify-between w-full">
+                                                <span className="font-semibold text-xs">{variant.grade}</span>
+                                                <Icons.ArrowRight className="h-3 w-3 opacity-50" />
+                                            </div>
+                                            <span className="text-[10px] text-muted-foreground font-mono mt-1 break-all line-clamp-1">{variant.sku}</span>
+                                        </div>
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {variants.length > 0 && <div className="relative"><div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div><div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or Search</span></div></div>}
+
+                    {/* Search Section */}
+                    <div className="space-y-3">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                            <Icons.Search className="h-4 w-4" />
+                            Search All SKUs
+                        </h4>
+                        <Input
+                            placeholder="Type to search SKU or Model..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                        {searchTerm && (
+                            <div className="border rounded-md max-h-[150px] overflow-y-auto divide-y bg-background">
+                                {searchResults.length === 0 ? (
+                                    <div className="p-3 text-sm text-center text-muted-foreground">No matches found</div>
+                                ) : (
+                                    searchResults.map(item => (
+                                        <div
+                                            key={item.sku}
+                                            className="p-2 hover:bg-muted/50 cursor-pointer flex justify-between items-center group transition-colors"
+                                            onClick={() => handleSelect(item.sku)}
+                                        >
+                                            <div className="flex flex-col overflow-hidden mr-2">
+                                                <span className="font-mono text-xs font-semibold truncate group-hover:text-primary transition-colors">{item.sku}</span>
+                                                <span className="text-[10px] text-muted-foreground truncate">{item.model} • {item.grade}</span>
+                                            </div>
+                                            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity">Select</Button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -1245,6 +1406,7 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
 
     const [quickMoveOpen, setQuickMoveOpen] = useState(false);
     const [quickMoveIds, setQuickMoveIds] = useState<Set<string> | null>(null);
+    const [isSkuTransformOpen, setIsSkuTransformOpen] = useState(false);
     const [importTargetId, setImportTargetId] = useState<string | null>(null);
     const [moveBlockedInfo, setMoveBlockedInfo] = useState<{ blockedBy: { departmentName: string; rules: string[] }; failedDeviceIds: string[] } | null>(null);
     const [moveConfirmationInfo, setMoveConfirmationInfo] = useState<{ count: number; targetName: string; sourceName: string; skuSummary: string; draggedIds: string[]; targetId: string | null } | null>(null);
@@ -2324,6 +2486,7 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                                 )}
 
                                 <div className="grid grid-cols-2 gap-4">
+
                                     <div className="space-y-2">
                                         <div className="flex items-center gap-2">
                                             <Label>SKU</Label>
@@ -2343,9 +2506,26 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                                                 <Icons.Copy className="h-3 w-3" />
                                             </Button>
                                         </div>
-                                        <Select
-                                            value={entity.deviceAttributes?.sku || ''}
-                                            onValueChange={(val) => {
+
+                                        <Button
+                                            variant="outline"
+                                            className="w-full justify-between font-normal"
+                                            onClick={() => setIsSkuTransformOpen(true)}
+                                        >
+                                            <span className={cn(!entity.deviceAttributes?.sku && "text-muted-foreground")}>
+                                                {entity.deviceAttributes?.sku || "Select SKU..."}
+                                            </span>
+                                            <Icons.ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                        </Button>
+
+                                        {/* SKU Transform Dialog */}
+                                        <SkuTransformDialog
+                                            isOpen={isSkuTransformOpen}
+                                            onClose={() => setIsSkuTransformOpen(false)}
+                                            currentSku={entity.deviceAttributes?.sku || null}
+                                            items={state.items}
+                                            onSave={(val) => {
+                                                const currentSku = entity.deviceAttributes?.sku;
                                                 const selectedItem = state.items?.[val];
                                                 const updates: Partial<DeviceAttributes> = { sku: val };
 
@@ -2361,19 +2541,16 @@ export function PropertiesPanel({ selectedIds, grouping, setGrouping, onSelect }
                                                 }
 
                                                 updateEntity(entity.id, { deviceAttributes: { ...entity.deviceAttributes, ...updates } });
+
+                                                // Log Transformation
+                                                if (currentSku && currentSku !== val) {
+                                                    logAction('TRANSFORM', `SKU changed from ${currentSku} to ${val}`, entity.id);
+                                                    toast.success(`SKU Transformed to ${val}`);
+                                                } else {
+                                                    toast.success('SKU updated');
+                                                }
                                             }}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="Select SKU" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {Object.values(state.items || {}).map((item) => (
-                                                    <SelectItem key={item.sku} value={item.sku}>
-                                                        {item.sku}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>Vendor SKU</Label>

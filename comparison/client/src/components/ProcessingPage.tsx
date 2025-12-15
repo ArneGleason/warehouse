@@ -2,13 +2,16 @@ import React, { useState } from 'react';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { useWarehouse } from '@/components/context/WarehouseContext';
+import { ItemDefinition } from '@/lib/warehouse';
+import { logAction } from '@/lib/history';
+import { socket } from '@/lib/socket';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
-import { Search, CheckCircle2, AlertCircle, Smartphone, X, ChevronLeft, ChevronRight, Copy, Settings, AlertTriangle, Minus, Edit, RotateCcw } from 'lucide-react';
+import { Search, CheckCircle2, AlertCircle, Smartphone, X, ChevronLeft, ChevronRight, Copy, Settings, AlertTriangle, Minus, Edit, RotateCcw, Workflow, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
     Select,
@@ -226,7 +229,9 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
     const { state, updateEntity, addEntity, moveEntity } = useWarehouse();
     const [incomingResults, setIncomingResults] = useState<TestResult[]>([]);
     const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
-    const [pendingProcess, setPendingProcess] = useState<{ deviceId: string, result: TestResult } | null>(null);
+    const [pendingProcess, setPendingProcess] = useState<{ deviceId: string, result: TestResult, transformSku?: string } | null>(null);
+    const [transformSku, setTransformSku] = useState<string>('');
+    const [isGenerating, setIsGenerating] = useState(false);
 
     // Fetch Results
     React.useEffect(() => {
@@ -245,6 +250,36 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         };
 
         fetchResults();
+
+        const onReset = (newResults: any[]) => {
+            const pending = newResults.filter((r: any) => r.status && r.status !== 'PROCESSED');
+            setIncomingResults(pending);
+        };
+
+        const onUpdate = (updatedResult: any) => {
+            setIncomingResults(prev => {
+                // If status is PROCESSED, remove it
+                if (updatedResult.status === 'PROCESSED') {
+                    return prev.filter(r => r.id !== updatedResult.id);
+                }
+
+                // If exists, update
+                const exists = prev.some(r => r.id === updatedResult.id);
+                if (exists) {
+                    return prev.map(r => r.id === updatedResult.id ? updatedResult : r);
+                }
+                // Else add
+                return [...prev, updatedResult];
+            });
+        };
+
+        socket.on('test-results-reset', onReset);
+        socket.on('test-result-update', onUpdate);
+
+        return () => {
+            socket.off('test-results-reset', onReset);
+            socket.off('test-result-update', onUpdate);
+        };
     }, []);
 
     // Scan State
@@ -362,8 +397,8 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         ? sourceBinDevices.filter(d => d.deviceAttributes?.po_number === poFilter)
         : sourceBinDevices;
 
-    const uniquePOs = Array.from(new Set(availableDevicesForSKU.map(d => d.deviceAttributes?.po_number).filter(Boolean))).sort();
-    const uniqueSKUs = Array.from(new Set(availableDevicesForPO.map(d => d.deviceAttributes?.sku).filter(Boolean))).sort();
+    const uniquePOs = Array.from(new Set(availableDevicesForPO.map(d => d.deviceAttributes?.po_number).filter(Boolean))).sort();
+    const uniqueSKUs = Array.from(new Set(availableDevicesForSKU.map(d => d.deviceAttributes?.sku).filter(Boolean))).sort();
 
     // Filter devices for matching
     const matchingDevices = Object.values(state.entities)
@@ -564,7 +599,7 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         return warnings;
     }, [pendingProcess, state.entities, state.items]);
 
-    const finalizeProcessing = (deviceId: string, result: TestResult) => {
+    const finalizeProcessing = (deviceId: string, result: TestResult, transformSku?: string) => {
         const currentDevice = state.entities[deviceId];
         const currentAttributes = currentDevice?.deviceAttributes || {};
 
@@ -592,18 +627,36 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
             }
         }
 
-        // 3. Update Device Attributes
-        updateEntity(deviceId, {
-            deviceAttributes: {
-                ...currentAttributes, // Preserve existing attributes (SKU, PO, etc.)
-                tested: true,
-                manufacturer: result.manufacturer,
-                capacity_gb: result.capacity.toString(),
-                color: result.color,
-                imei: currentAttributes.imei || result.imei, // Only update IMEI if it was blank
-                test_result: result,
-                sellable: true
+        // 3. Prepare Device Attributes
+        let newAttributes = {
+            ...currentAttributes, // Preserve existing attributes (SKU, PO, etc.)
+            tested: true,
+            manufacturer: result.manufacturer,
+            capacity_gb: result.capacity.toString(),
+            color: result.color,
+            imei: currentAttributes.imei || result.imei, // Only update IMEI if it was blank
+            test_result: result,
+            sellable: true
+        };
+
+        // SKU Transformation
+        if (transformSku) {
+            const newItem = state.items[transformSku];
+            if (newItem) {
+                newAttributes = {
+                    ...newAttributes,
+                    sku: transformSku,
+                    grade: newItem.grade
+                };
+
+                // Explicitly log the transformation action
+                logAction('TRANSFORM', `SKU changed from ${currentAttributes.sku} to ${transformSku}`, deviceId);
+                toast.success(`SKU Transformed to ${transformSku} (${newItem.grade})`);
             }
+        }
+
+        updateEntity(deviceId, {
+            deviceAttributes: newAttributes
         });
 
         // 4. Update Result Status on Server
@@ -647,9 +700,9 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         toast.info("Device moved to Exception Bin");
     };
 
-    const handleMatchDevice = (deviceId: string) => {
+    const handleMatchDevice = (deviceId: string, transformSku?: string) => {
         if (!selectedResult) return;
-        setPendingProcess({ deviceId, result: selectedResult });
+        setPendingProcess({ deviceId, result: selectedResult, transformSku });
     };
 
 
@@ -753,44 +806,116 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         toast.info("Editing Test Result");
     };
 
-    const handleResetDemo = async () => {
+    const handleGenerateDemoResults = async () => {
+        setIsGenerating(true);
         try {
-            // Filter for UNPROCESSED devices (no existing test result linked)
-            // AND limit to 4 for the demo logic
-            const unprocessedDevices = sourceBinDevices
-                .filter(d => !d.deviceAttributes?.testResult)
-                .slice(0, 4);
-
-            const targets = unprocessedDevices.map(d => ({
-                manufacturer: d.deviceAttributes?.manufacturer || 'Unknown',
-                model: d.deviceAttributes?.model || 'Device',
-                capacity: d.deviceAttributes?.capacity_gb || '0',
-                color: d.deviceAttributes?.color || 'Black',
-                imei: d.deviceAttributes?.imei || null
-            }));
-
-            const response = await fetch(`${SERVER_URL}/api/test-results/reset`, {
+            // 1. Clear ALL existing results first
+            await fetch(`${SERVER_URL}/api/test-results/reset`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targets })
+                body: JSON.stringify({ skipSeed: true })
             });
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Server error: ${response.status}`);
+            // 2. Get Candidates (Untested Devices in Source Bin)
+            const candidates = sourceBinDevices.filter(d => !d.deviceAttributes?.tested);
+            if (candidates.length === 0) {
+                toast.info("No untested devices found in Source Bin to generate results for.");
+                return;
             }
 
-            // Refresh list (or wait for socket)
-            const res = await fetch(`${SERVER_URL}/api/test-results`);
-            if (res.ok) {
-                const data = await res.json();
-                const pending = data.results.filter((r: any) => r.status && r.status !== 'PROCESSED');
-                setIncomingResults(pending);
-                toast.success(`Demo Data Reset: Generated ${targets.length} results`);
+            const resultsToCreate: any[] = [];
+            let createdCount = 0;
+
+            candidates.forEach((device, index) => {
+                const attrs = device.deviceAttributes || {};
+                const deviceImei = attrs.imei;
+
+                let outcomeDef;
+                if (index < 3) {
+                    // First 3: Perfect Pass
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: false };
+                } else if (index === 3) {
+                    // 4th: Pass with Mismatch
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: true, mismatchKey: 'capacity', mismatchVal: 999 };
+                } else if (index === 4) {
+                    // 5th: Fail
+                    outcomeDef = { status: 'FAIL', outcome: 'Fail', mismatch: false };
+                } else {
+                    // 6th onwards: Perfect Pass
+                    outcomeDef = { status: 'PASS', outcome: 'Pass', mismatch: false };
+                }
+                const now = new Date().toISOString();
+
+                const resultImei = deviceImei || `35${Math.floor(Math.random() * 1000000000000)}`;
+
+                // Get Item Master Data
+                const sku = attrs.sku;
+                const item = sku ? state.items[sku] : null;
+                const itemLockStatus = item?.lockStatus || 'Unlocked';
+                const isItemUnlocked = itemLockStatus.toLowerCase().trim() === 'unlocked';
+
+                // Determine Result simLock
+                // Default to matching the item. Only mismatch if intended (future proofing, currently only capacity mismatch used)
+                const simLock = isItemUnlocked ? 'Unlocked' : 'Locked';
+
+                // Determine Result Attributes (prefer Item Master, fallback to Device Attributes)
+                const manufacturer = item?.manufacturer || attrs.manufacturer || 'Apple';
+                const model = item?.model || attrs.model || 'iPhone 13';
+                const color = item?.color || attrs.color || 'Midnight';
+                const baseCapacity = item?.capacity_gb ? parseInt(item.capacity_gb.toString()) : (parseInt(attrs.capacity_gb || '128'));
+
+                // Calculate Capacity (apply mismatch if needed)
+                const capacity = outcomeDef.mismatch && outcomeDef.mismatchKey === 'capacity'
+                    ? outcomeDef.mismatchVal
+                    : baseCapacity;
+
+                const newResult = {
+                    manufacturer,
+                    model,
+                    capacity,
+                    color,
+                    imei: resultImei,
+                    status: outcomeDef.status,
+                    automated: {
+                        source: 'Manapov',
+                        runStatus: 'Completed',
+                        runOutcome: outcomeDef.outcome,
+                        runTime: now,
+                        stationId: `ST-AUTO`,
+                        details: {
+                            powerOn: 'Pass',
+                            screenTouch: outcomeDef.status === 'FAIL' ? 'Fail' : 'Pass',
+                            buttonsSensors: 'Pass',
+                            cameras: 'Pass',
+                            audio: 'Pass',
+                            connectivity: 'Pass',
+                            simLock: simLock,
+                            batteryHealth: 90,
+                            batteryResult: 'OK'
+                        }
+                    }
+                };
+                resultsToCreate.push(newResult);
+                createdCount++;
+            });
+
+            if (resultsToCreate.length > 0) {
+                // Sequential create
+                for (const resData of resultsToCreate) {
+                    try {
+                        await fetch(`${SERVER_URL}/api/test-results`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(resData)
+                        });
+                    } catch (e) {
+                        console.error("Failed to auto-generate result", e);
+                    }
+                }
+                toast.success(`Cleared old results and generated ${createdCount} new ones`);
             }
-        } catch (err: any) {
-            console.error(err);
-            toast.error(`Failed to reset demo data: ${err.message}`);
+        } finally {
+            setIsGenerating(false);
         }
     };
 
@@ -798,7 +923,10 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
         <div className="h-full w-full flex flex-col bg-background overflow-hidden">
             <header className="h-14 border-b flex items-center justify-between px-6 shrink-0 bg-card">
                 <div className="flex items-center gap-4">
-                    <h1 className="font-bold text-lg">Process Device</h1> {/* Renamed Title */}
+                    <h1 className="font-bold text-lg flex items-center gap-2">
+                        <Workflow className="h-5 w-5" />
+                        Process Device
+                    </h1> {/* Renamed Title */}
                     {isConfigured ? (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground border-l pl-4">
                             <div className="flex flex-col">
@@ -818,10 +946,6 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={handleResetDemo} title="Reset Test Results for Demo">
-                        <RotateCcw className="h-4 w-4 mr-2" />
-                        Reset for Demo
-                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(true)} title="Configure Processing Bins">
                         <Settings className="h-5 w-5 text-muted-foreground" />
                     </Button>
@@ -867,22 +991,37 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
 
                         <div className="w-[300px] space-y-2">
                             <label className="text-sm font-medium">Or Select Pending Result</label>
-                            <Select onValueChange={(val) => setSelectedResultId(val)}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select from list..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {incomingResults.map(r => (
-                                        <SelectItem key={r.id} value={r.id}>
-                                            <span className="font-mono text-xs mr-2">{r.imei}</span>
-                                            • {r.manufacturer} • {r.model}
-                                        </SelectItem>
-                                    ))}
-                                    {incomingResults.length === 0 && (
-                                        <div className="p-2 text-xs text-muted-foreground text-center">No pending auto-test results</div>
+                            <div className="flex gap-2">
+                                <Select onValueChange={(val) => setSelectedResultId(val)}>
+                                    <SelectTrigger className="flex-1">
+                                        <SelectValue placeholder="Select from list..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {incomingResults.map(r => (
+                                            <SelectItem key={r.id} value={r.id}>
+                                                <span className="font-mono text-xs mr-2">{r.imei}</span>
+                                                • {r.manufacturer} • {r.model}
+                                            </SelectItem>
+                                        ))}
+                                        {incomingResults.length === 0 && (
+                                            <div className="p-2 text-xs text-muted-foreground text-center">No pending auto-test results</div>
+                                        )}
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={handleGenerateDemoResults}
+                                    title="Generate Demo Results for Source Bin"
+                                    disabled={isGenerating}
+                                >
+                                    {isGenerating ? (
+                                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                    ) : (
+                                        <Sparkles className="h-4 w-4 text-primary" />
                                     )}
-                                </SelectContent>
-                            </Select>
+                                </Button>
+                            </div>
                         </div>
                     </div>
 
@@ -996,61 +1135,17 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                                 </Button>
                             </div>
                         ) : <div className="grid gap-3">
-                            {groupedMatches.map(item => {
-                                const device = item as any; // Cast for implicit props
-                                // Calculate Match Reasons
-                                const reasons: string[] = [];
-                                if (selectedResult && device.deviceAttributes?.model === selectedResult.model) reasons.push('Model Match');
-                                if (poFilter && device.deviceAttributes?.po_number === poFilter) reasons.push('PO Match');
-                                if (skuFilter && device.deviceAttributes?.sku === skuFilter) reasons.push('SKU Match');
-
-                                return (
-                                    <div key={device.id} className="border p-4 rounded-md bg-card flex justify-between items-center group hover:border-primary transition-colors shadow-sm">
-                                        <div>
-                                            <div className="font-medium flex items-center gap-2">
-                                                {device.isGroup ? (
-                                                    <>
-                                                        {device.deviceAttributes?.manufacturer} {device.deviceAttributes?.model}
-                                                        <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200">
-                                                            {device.groupCount} Available
-                                                        </Badge>
-                                                    </>
-                                                ) : (
-                                                    device.label
-                                                )}
-
-                                                {!device.isGroup && reasons.map(r => <Badge key={r} variant="outline" className="text-[10px] bg-secondary/50">{r}</Badge>)}
-
-                                                {device.deviceAttributes?.sellable && (
-                                                    <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-[10px] flex items-center gap-1">
-                                                        <CheckCircle2 className="h-3 w-3" /> Processed
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                            <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
-                                                <span>SKU: <span className="text-foreground">{device.deviceAttributes?.sku || '-'}</span></span>
-                                                <span>PO: <span className="text-foreground">{device.deviceAttributes?.po_number || '-'}</span></span>
-                                                {!device.isGroup && <span>IMEI: <span className="text-foreground">{device.deviceAttributes?.imei || '-'}</span></span>}
-                                                <span>Color: <span className="text-foreground">{device.deviceAttributes?.color || '-'}</span></span>
-                                            </div>
-                                        </div>
-                                        <Button
-                                            onClick={() => {
-                                                if (selectedResult) {
-                                                    // If group, use the first ID (which is device.id as per our map logic)
-                                                    handleMatchDevice(device.id);
-                                                } else {
-                                                    toast.error("Please scan a test result first (or perform manual test)");
-                                                }
-                                            }}
-                                            disabled={!selectedResult}
-                                            className={cn(selectedResult ? "bg-primary" : "bg-muted text-muted-foreground")}
-                                        >
-                                            {device.isGroup ? "Connect & Process (Any)" : "Connect & Process"}
-                                        </Button>
-                                    </div>
-                                );
-                            })}
+                            {groupedMatches.map(item => (
+                                <MatchingDeviceRow
+                                    key={item.id}
+                                    device={item}
+                                    selectedResult={selectedResult}
+                                    onConnect={handleMatchDevice}
+                                    poFilter={poFilter}
+                                    skuFilter={skuFilter}
+                                    items={state.items}
+                                />
+                            ))}
                         </div>
                         }
                     </div>
@@ -1357,6 +1452,18 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                                         <div><span className="font-medium text-foreground">IMEI:</span> {state.entities[pendingProcess.deviceId]?.deviceAttributes?.imei}</div>
                                     )}
                                     <div><span className="font-medium text-foreground">SKU:</span> {state.entities[pendingProcess.deviceId]?.deviceAttributes?.sku || 'N/A'}</div>
+
+                                    {pendingProcess.transformSku && (
+                                        <div className="mt-2 pt-2 border-t border-dashed">
+                                            <div className="text-xs font-semibold text-blue-600 flex items-center gap-1">
+                                                <Sparkles className="h-3 w-3" />
+                                                Transformation
+                                            </div>
+                                            <div className="text-xs">
+                                                Change to: <span className="font-mono font-bold text-foreground">{pendingProcess.transformSku}</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             <div>
@@ -1388,13 +1495,118 @@ export function ProcessingPage({ onNavigateToExplorer }: ProcessingPageProps) {
                         )}
                         <Button onClick={() => {
                             if (pendingProcess) {
-                                finalizeProcessing(pendingProcess.deviceId, pendingProcess.result);
+                                finalizeProcessing(pendingProcess.deviceId, pendingProcess.result, pendingProcess.transformSku);
                             }
                         }}>Confirm & Process</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog >
         </div >
+    );
+}
+
+interface MatchingDeviceRowProps {
+    device: any;
+    selectedResult: TestResult | null | undefined;
+    onConnect: (deviceId: string, transformSku?: string) => void;
+    poFilter: string;
+    skuFilter: string;
+    items: Record<string, ItemDefinition>;
+}
+
+function MatchingDeviceRow({ device, selectedResult, onConnect, poFilter, skuFilter, items }: MatchingDeviceRowProps) {
+    const [targetSku, setTargetSku] = useState<string>('');
+
+    // Calculate Match Reasons
+    const reasons: string[] = [];
+    if (selectedResult && device.deviceAttributes?.model === selectedResult.model) reasons.push('Model Match');
+    if (poFilter && device.deviceAttributes?.po_number === poFilter) reasons.push('PO Match');
+    if (skuFilter && device.deviceAttributes?.sku === skuFilter) reasons.push('SKU Match');
+
+    // Calculate Variants
+    const currentSku = device.deviceAttributes?.sku;
+    const baseSkuId = currentSku ? items[currentSku]?.base_sku_id : null;
+    const siblings = React.useMemo(() => {
+        if (!baseSkuId) return [];
+        return Object.values(items).filter(i =>
+            i.base_sku_id === baseSkuId &&
+            i.sku !== currentSku // Exclude current
+        ).sort((a, b) => a.grade.localeCompare(b.grade));
+    }, [baseSkuId, currentSku, items]);
+
+    return (
+        <div key={device.id} className="border p-4 rounded-md bg-card flex flex-col gap-3 group hover:border-primary transition-colors shadow-sm">
+            <div className="flex justify-between items-start">
+                <div>
+                    <div className="font-medium flex items-center gap-2">
+                        {device.isGroup ? (
+                            <>
+                                {device.deviceAttributes?.manufacturer} {device.deviceAttributes?.model}
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-blue-200">
+                                    {device.groupCount} Available
+                                </Badge>
+                            </>
+                        ) : (
+                            device.label
+                        )}
+
+                        {!device.isGroup && reasons.map(r => <Badge key={r} variant="outline" className="text-[10px] bg-secondary/50">{r}</Badge>)}
+
+                        {device.deviceAttributes?.sellable && (
+                            <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-[10px] flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3" /> Processed
+                            </Badge>
+                        )}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-x-8 gap-y-1">
+                        <span>SKU: <span className="text-foreground">{device.deviceAttributes?.sku || '-'}</span></span>
+                        <span>PO: <span className="text-foreground">{device.deviceAttributes?.po_number || '-'}</span></span>
+                        {!device.isGroup && <span>IMEI: <span className="text-foreground">{device.deviceAttributes?.imei || '-'}</span></span>}
+                        <span>Color: <span className="text-foreground">{device.deviceAttributes?.color || '-'}</span></span>
+                    </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-2">
+                    {/* Transformation Selector */}
+                    {siblings.length > 0 && selectedResult && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">Transform to:</span>
+                            <Select value={targetSku} onValueChange={setTargetSku}>
+                                <SelectTrigger className="h-7 text-xs w-[140px]">
+                                    <SelectValue placeholder="Original SKU" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="original">Original SKU</SelectItem>
+                                    {siblings.map(sib => (
+                                        <SelectItem key={sib.sku} value={sib.sku}>
+                                            {sib.grade} ({sib.sku})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="flex justify-end pt-2 border-t mt-1">
+                <Button
+                    size="sm"
+                    onClick={() => {
+                        if (selectedResult) {
+                            // Convert explicit "original" string back to undefined
+                            onConnect(device.id, (targetSku && targetSku !== 'original') ? targetSku : undefined);
+                        } else {
+                            toast.error("Please scan a test result first");
+                        }
+                    }}
+                    disabled={!selectedResult}
+                    className={cn(selectedResult ? "bg-primary" : "bg-muted text-muted-foreground")}
+                >
+                    {device.isGroup ? "Connect & Process (Any)" : "Connect & Process"}
+                    {targetSku && targetSku !== 'original' && <span className="ml-2 opacity-80 text-[10px] bg-white/20 px-1 rounded"> + Transform</span>}
+                </Button>
+            </div>
+        </div>
     );
 }
 

@@ -69,9 +69,39 @@ function resume() {
         console.warn(`Backup file ${backupPath} not found!`);
     }
 
+    // 2. Start Servers (Detached)
+    console.log("Starting backend server...");
+    try {
+        const out = fs.openSync('./server/server.log', 'a');
+        const err = fs.openSync('./server/server.log', 'a');
+        const serverProcess = require('child_process').spawn('node', ['index.js'], {
+            cwd: path.resolve(__dirname, 'server'),
+            detached: true,
+            stdio: ['ignore', out, err]
+        });
+        serverProcess.unref();
+    } catch (e) {
+        console.error("Failed to start server:", e);
+    }
+
+    console.log("Starting frontend client (Port 3010)...");
+    try {
+        const out = fs.openSync('./client/client.log', 'a');
+        const err = fs.openSync('./client/client.log', 'a');
+        const clientProcess = require('child_process').spawn('npm', ['run', 'dev', '--', '-p', '3010'], {
+            cwd: path.resolve(__dirname, 'client'),
+            detached: true,
+            stdio: ['ignore', out, err]
+        });
+        clientProcess.unref();
+    } catch (e) {
+        console.error("Failed to start client:", e);
+    }
+
     console.log(`\n\n[RESUME COMPLETE]`);
     console.log(`Last working on: ${session.lastTask}`);
-    console.log(`Ready to restart servers.`);
+    console.log(`Servers restarting relative to 'server/server.log' and 'client/client.log'.`);
+    console.log(`App should be available at http://localhost:3010 shortly.`);
 }
 
 if (command === 'suspend') {

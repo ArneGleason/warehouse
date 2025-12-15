@@ -4,10 +4,10 @@ import { toast } from 'sonner';
 import React, { createContext, useContext, useEffect, useReducer, useState, useRef } from 'react';
 import { socket } from '@/lib/socket';
 import { logAction } from '@/lib/history';
-import { WarehouseEntity, WarehouseState, createEntity, canMoveEntity, generateDeviceLabel, Order } from '@/lib/warehouse';
+import { WarehouseEntity, WarehouseState, createEntity, canMoveEntity, generateDeviceLabel, Order, Vendor, PurchaseOrder, PurchaseOrderLine, generateBaseSkuId } from '@/lib/warehouse';
 import { v4 as uuidv4 } from 'uuid';
 
-const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3011';
 
 // Action Types
 type Action =
@@ -25,6 +25,7 @@ type Action =
     | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } }
     | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } }
     | { type: 'ADD_ITEM'; payload: { item: any } }
+    | { type: 'ADD_ITEMS'; payload: { items: any[] } }
     | { type: 'UPDATE_ITEM'; payload: { sku: string; updates: any } }
     | { type: 'ADD_VENDOR_SKU'; payload: { vendorSku: any } }
     | { type: 'ADD_VENDOR_SKU'; payload: { vendorSku: any } }
@@ -34,7 +35,14 @@ type Action =
     | { type: 'ALLOCATE_DEVICES'; payload: { orderId: string; orderNumber: string; buyerName: string; deviceIds: string[] } }
     | { type: 'ALLOCATE_DEVICES'; payload: { orderId: string; orderNumber: string; buyerName: string; deviceIds: string[] } }
     | { type: 'UNALLOCATE_DEVICES'; payload: { deviceIds: string[] } }
-    | { type: 'DELETE_ORDER'; payload: { id: string } };
+    | { type: 'UNALLOCATE_DEVICES'; payload: { deviceIds: string[] } }
+    | { type: 'DELETE_ORDER'; payload: { id: string } }
+    | { type: 'ADD_VENDOR'; payload: { vendor: Vendor } }
+    | { type: 'UPDATE_VENDOR'; payload: { id: string; updates: Partial<Vendor> } }
+    | { type: 'DELETE_VENDOR'; payload: { id: string } }
+    | { type: 'ADD_PO'; payload: { po: PurchaseOrder } }
+    | { type: 'UPDATE_PO'; payload: { id: string; updates: Partial<PurchaseOrder> } }
+    | { type: 'DELETE_PO'; payload: { id: string } };
 
 // Initial State
 const initialState: WarehouseState = {
@@ -45,36 +53,43 @@ const initialState: WarehouseState = {
     processingSourceBinId: null,
     processingDestBinId: null,
     processingExceptionBinId: null,
+    receivingBinId: null,
     items: {
         'IPHONE-13-128-MID': {
             sku: 'IPHONE-13-128-MID', category: 'Phone', manufacturer: 'Apple', model: 'iPhone 13', modelNumber: 'A2633',
             grade: 'A', capacity_gb: '128', color: 'Midnight', carrier: 'Unlocked', lockStatus: 'Unlocked', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: ['VS-001'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: ['VS-001'], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'APPLE|IPHONE 13|A2633|128|MIDNIGHT|UNLOCKED|UNLOCKED|S'
         },
         'IPHONE-12-PRO-256-GLD': {
             sku: 'IPHONE-12-PRO-256-GLD', category: 'Phone', manufacturer: 'Apple', model: 'iPhone 12 Pro', modelNumber: 'A2407',
             grade: 'B', capacity_gb: '256', color: 'Gold', carrier: 'Verizon', lockStatus: 'Locked', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'APPLE|IPHONE 12 PRO|A2407|256|GOLD|VERIZON|LOCKED|S'
         },
         'GALAXY-S22-128-GRY': {
             sku: 'GALAXY-S22-128-GRY', category: 'Phone', manufacturer: 'Samsung', model: 'Galaxy S22', modelNumber: 'SM-S901U',
             grade: 'A', capacity_gb: '128', color: 'Phantom Gray', carrier: 'T-Mobile', lockStatus: 'Locked', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'SAMSUNG|GALAXY S22|SM-S901U|128|PHANTOM GRAY|T-MOBILE|LOCKED|S'
         },
         'PIXEL-7-128-OBS': {
             sku: 'PIXEL-7-128-OBS', category: 'Phone', manufacturer: 'Google', model: 'Pixel 7', modelNumber: 'GA03435',
             grade: 'A', capacity_gb: '128', color: 'Obsidian', carrier: 'Unlocked', lockStatus: 'Unlocked', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'GOOGLE|PIXEL 7|GA03435|128|OBSIDIAN|UNLOCKED|UNLOCKED|S'
         },
         'IPAD-9-64-SIL': {
             sku: 'IPAD-9-64-SIL', category: 'Tablet', manufacturer: 'Apple', model: 'iPad 9th Gen', modelNumber: 'A2602',
             grade: 'C', capacity_gb: '64', color: 'Silver', carrier: 'Generic', lockStatus: 'Unknown', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'APPLE|IPAD 9TH GEN|A2602|64|SILVER|GENERIC|UNKNOWN|S'
         },
         'GALAXY-TAB-A8-32-GRY': {
             sku: 'GALAXY-TAB-A8-32-GRY', category: 'Tablet', manufacturer: 'Samsung', model: 'Galaxy Tab A8', modelNumber: 'SM-X200',
             grade: 'B', capacity_gb: '32', color: 'Dark Gray', carrier: 'Generic', lockStatus: 'Unknown', serialized: true, active: true,
-            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            optionalAttributes: {}, vendorSkus: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+            base_sku_id: 'SAMSUNG|GALAXY TAB A8|SM-X200|32|DARK GRAY|GENERIC|UNKNOWN|S'
         }
     },
     vendorSkus: {
@@ -85,6 +100,10 @@ const initialState: WarehouseState = {
     },
     orders: {},
     orderCounter: 1000,
+    vendors: {},
+    vendorCounter: 1000,
+    purchaseOrders: {},
+    poCounter: 1000,
 };
 
 // Reducer
@@ -571,6 +590,18 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
             };
         }
 
+        case 'ADD_ITEMS': {
+            const { items } = action.payload;
+            const newItems = { ...state.items };
+            items.forEach(item => {
+                newItems[item.sku] = item;
+            });
+            return {
+                ...state,
+                items: newItems
+            };
+        }
+
         case 'UPDATE_ITEM': {
             const { sku, updates } = action.payload;
             const item = state.items[sku];
@@ -647,6 +678,70 @@ function warehouseReducer(state: WarehouseState, action: Action): WarehouseState
             };
         }
 
+        case 'ADD_VENDOR': {
+            const { vendor } = action.payload;
+            return {
+                ...state,
+                vendors: { ...state.vendors, [vendor.id]: vendor },
+                vendorCounter: state.vendorCounter + 1
+            };
+        }
+
+        case 'UPDATE_VENDOR': {
+            const { id, updates } = action.payload;
+            const vendor = state.vendors[id];
+            if (!vendor) return state;
+            return {
+                ...state,
+                vendors: {
+                    ...state.vendors,
+                    [id]: { ...vendor, ...updates, updatedAt: new Date().toISOString() }
+                }
+            };
+        }
+
+        case 'DELETE_VENDOR': {
+            const { id } = action.payload;
+            const newVendors = { ...state.vendors };
+            delete newVendors[id];
+            return {
+                ...state,
+                vendors: newVendors
+            };
+        }
+
+        case 'ADD_PO': {
+            const { po } = action.payload;
+            return {
+                ...state,
+                purchaseOrders: { ...state.purchaseOrders, [po.id]: po },
+                poCounter: state.poCounter + 1
+            };
+        }
+
+        case 'UPDATE_PO': {
+            const { id, updates } = action.payload;
+            const po = state.purchaseOrders[id];
+            if (!po) return state;
+            return {
+                ...state,
+                purchaseOrders: {
+                    ...state.purchaseOrders,
+                    [id]: { ...po, ...updates, updatedAt: new Date().toISOString() }
+                }
+            };
+        }
+
+        case 'DELETE_PO': {
+            const { id } = action.payload;
+            const newPOs = { ...state.purchaseOrders };
+            delete newPOs[id];
+            return {
+                ...state,
+                purchaseOrders: newPOs
+            };
+        }
+
         case 'ALLOCATE_DEVICES': {
             const { orderId, orderNumber, buyerName, deviceIds } = action.payload;
             const newEntities = { ...state.entities };
@@ -714,13 +809,14 @@ interface WarehouseContextType {
     undo: () => void;
     canUndo: boolean;
     isConnected: boolean;
-    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null }) => void;
+    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null; receivingBinId?: string | null }) => void;
     boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
     unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
     updateEntities: (updates: { id: string; updates: Partial<WarehouseEntity> }[]) => void;
 
     // Item Master
     addItem: (item: any) => void;
+    addItems: (items: any[]) => void;
     updateItem: (sku: string, updates: any) => void;
     addVendorSku: (vendorSku: any) => void;
     updateVendorSku: (id: string, updates: any) => void;
@@ -735,6 +831,21 @@ interface WarehouseContextType {
     deleteOrder: (orderId: string) => void;
     removeOrderLine: (orderId: string, lineId: string) => void;
     shipOrder: (orderId: string) => void;
+
+    // Vendors
+    addVendor: (vendor: Omit<Vendor, 'id' | 'createdAt' | 'updatedAt' | 'vendorCode'>) => void;
+    updateVendor: (id: string, updates: Partial<Vendor>) => void;
+    deleteVendor: (id: string) => void;
+
+    // Purchase Orders
+    addPurchaseOrder: (vendorId: string) => string;
+    updatePurchaseOrder: (id: string, updates: Partial<PurchaseOrder>) => void;
+    deletePurchaseOrder: (id: string) => void;
+    getNextPoNumber: () => string;
+    finishPurchaseOrder: (id: string) => void;
+    markAllocatedDevicesPicked: (deviceIds: string[]) => void;
+    claimUnserializedPromise: (orderId: string, sku: string, imei: string) => boolean;
+
     setWarehouseState: (newState: WarehouseState) => void;
 }
 
@@ -800,6 +911,31 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
                     }
                     if (!loadedState.vendorSkus) {
                         loadedState.vendorSkus = initialState.vendorSkus;
+                    }
+                    if (!loadedState.vendors) loadedState.vendors = initialState.vendors;
+                    if (!loadedState.vendorCounter) loadedState.vendorCounter = initialState.vendorCounter;
+
+                    if (!loadedState.orders) loadedState.orders = initialState.orders;
+                    if (!loadedState.orderCounter) loadedState.orderCounter = initialState.orderCounter;
+
+                    if (!loadedState.purchaseOrders) loadedState.purchaseOrders = initialState.purchaseOrders;
+                    if (!loadedState.poCounter) loadedState.poCounter = initialState.poCounter;
+
+                    // MIGRATION: Ensure all items have base_sku_id
+                    if (loadedState.items) {
+                        let migrationNeeded = false;
+                        Object.values(loadedState.items).forEach((item: any) => {
+                            if (!item.base_sku_id) {
+                                item.base_sku_id = generateBaseSkuId(item);
+                                migrationNeeded = true;
+                            }
+                        });
+                        // Can't call saveState here easily because it's defined below
+                        // But dispatching correct state fixes UI immediately
+                        // Persistence will happen on next write
+                        if (migrationNeeded) {
+                            console.log("Migrated items to include base_sku_id");
+                        }
                     }
 
                     dispatch({ type: 'SET_STATE', payload: loadedState });
@@ -1093,11 +1229,32 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
 
     // Item Master Actions
     const addItem = (item: any) => {
+        if (!item.base_sku_id) {
+            item.base_sku_id = generateBaseSkuId(item);
+        }
         const action: Action = { type: 'ADD_ITEM', payload: { item } };
         const newState = warehouseReducer(state, action);
         dispatch(action);
         saveState(newState);
         logAction('CREATE', `Created Item: ${item.sku}`, item.sku);
+    };
+
+    const addItems = (items: any[]) => {
+        if (items.length === 0) return;
+
+        // Ensure all items have base_sku_id
+        const processedItems = items.map(item => {
+            if (!item.base_sku_id) {
+                return { ...item, base_sku_id: generateBaseSkuId(item) };
+            }
+            return item;
+        });
+
+        const action: Action = { type: 'ADD_ITEMS', payload: { items: processedItems } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Bulk created ${items.length} items`, items[0].sku);
     };
 
     const updateItem = (sku: string, updates: any) => {
@@ -1268,6 +1425,255 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
         updateOrder(orderId, { status: 'Shipped', shippedAt: new Date().toISOString() });
     };
 
+    const addVendor = (vendorData: Omit<Vendor, 'id' | 'createdAt' | 'updatedAt' | 'vendorCode'>) => {
+        const id = uuidv4();
+        const vendorCode = `VND-${state.vendorCounter + 1}`;
+        const newVendor: Vendor = {
+            id,
+            vendorCode,
+            ...vendorData,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        const action: Action = { type: 'ADD_VENDOR', payload: { vendor: newVendor } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Created Vendor: ${newVendor.name}`, id);
+    };
+
+    const updateVendor = (id: string, updates: Partial<Vendor>) => {
+        const action: Action = { type: 'UPDATE_VENDOR', payload: { id, updates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+    };
+
+    const deleteVendor = (id: string) => {
+        const action: Action = { type: 'DELETE_VENDOR', payload: { id } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('DELETE', 'Deleted Vendor', id);
+    };
+
+    // Purchase Orders
+    const addPurchaseOrder = (vendorId: string) => {
+        const id = uuidv4();
+        const poNumber = `PO-${state.poCounter + 1}`;
+        const newPO: PurchaseOrder = {
+            id,
+            poNumber,
+            vendorId,
+            status: 'Draft',
+            lines: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        const action: Action = { type: 'ADD_PO', payload: { po: newPO } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('CREATE', `Created PO: ${poNumber}`, id);
+        return id;
+    };
+
+    const updatePurchaseOrder = (id: string, updates: Partial<PurchaseOrder>) => {
+        const action: Action = { type: 'UPDATE_PO', payload: { id, updates } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+    };
+
+    const deletePurchaseOrder = (id: string) => {
+        const action: Action = { type: 'DELETE_PO', payload: { id } };
+        const newState = warehouseReducer(state, action);
+        dispatch(action);
+        saveState(newState);
+        logAction('DELETE', 'Deleted PO', id);
+    };
+
+    const getNextPoNumber = () => {
+        return `PO-${state.poCounter}`;
+    };
+
+    const finishPurchaseOrder = (poId: string) => {
+        const po = state.purchaseOrders[poId];
+        const receivingBinId = state.receivingBinId;
+
+        if (!po || !receivingBinId) return;
+
+        // 1. Generate devices for received quantities
+        const newEntities = { ...state.entities };
+        const receivingBin = newEntities[receivingBinId];
+        if (!receivingBin) return; // or create it? User should've selected valid one.
+
+        po.lines.forEach(line => {
+            const qtyToReceive = line.receivedQty || 0;
+            if (qtyToReceive <= 0) return;
+
+            const item = state.items[line.itemSku];
+            // Look up promises for this line
+            const promisedLines: { orderId: string, orderNumber: string, remainingQty: number }[] = [];
+
+            Object.values(state.orders).forEach(order => {
+                if (order.status !== 'Canceled') {
+                    order.lines.forEach(ol => {
+                        if (ol.promisedPoId === poId && ol.promisedPoLineId === line.id) {
+                            // Determine how many are NOT yet allocated (simple approximation: assume full line needs allocation if we are just receiving now)
+                            // In a more complex system, we'd track allocation status per line more granularly.
+                            // For now, we allocate up to the order line qty.
+                            promisedLines.push({
+                                orderId: order.id,
+                                orderNumber: order.orderNumber,
+                                remainingQty: ol.qty
+                            });
+                        }
+                    });
+                }
+            });
+
+            for (let i = 0; i < qtyToReceive; i++) {
+                const deviceId = uuidv4();
+
+                // Determine allocation
+                let allocatedToOrder: { orderId: string, orderNumber: string, buyerName: string, allocatedAt: string } | undefined = undefined;
+
+                // Find a promise that needs fulfillment
+                const promiseIndex = promisedLines.findIndex(p => p.remainingQty > 0);
+                if (promiseIndex >= 0) {
+                    const p = promisedLines[promiseIndex];
+                    const order = state.orders[p.orderId]; // accurate lookup
+                    allocatedToOrder = {
+                        orderId: p.orderId,
+                        orderNumber: p.orderNumber,
+                        buyerName: order?.buyer?.name || 'Unknown',
+                        allocatedAt: new Date().toISOString()
+                    };
+                    promisedLines[promiseIndex].remainingQty--;
+                }
+
+                const device: WarehouseEntity = {
+                    id: deviceId,
+                    type: 'Device',
+                    label: 'Pending...',
+                    parentId: receivingBinId,
+                    children: [],
+                    deviceAttributes: {
+                        sku: line.itemSku,
+                        vendor_sku: line.vendorSku,
+                        model: item?.model || 'Unknown Model',
+                        manufacturer: item?.manufacturer || 'Unknown',
+                        grade: item?.grade || 'UNTESTED',
+                        po_number: po.poNumber,
+                        allocatedToOrder: allocatedToOrder
+                    }
+                };
+                device.label = generateDeviceLabel(device.deviceAttributes!);
+
+                newEntities[deviceId] = device;
+                receivingBin.children = [...receivingBin.children, deviceId];
+            }
+        });
+
+        // 2. Update PO Status to Done
+        const newPOs = { ...state.purchaseOrders };
+        newPOs[poId] = { ...po, status: 'Done', updatedAt: new Date().toISOString() };
+
+        // 3. Dispatch Batch Update (custom logic or just SET_STATE)
+        // Since we are touching entities AND POs, best to just create a new state object and SET_STATE
+        // But we need to be careful with history/undo. 
+        // Let's make a specific reducer action 'FINISH_PO' if we want atomic
+        // OR just dispatch SET_STATE with the new blob.
+
+        // For simplicity and atomicity, let's dispatch a specialized action so reducer handles it? 
+        // Logic is a bit complex for reducer (UUID gen). 
+        // Let's do the "SET_STATE" approach or "BATCH_UPDATE_ENTITIES" + "UPDATE_PO" combo.
+        // But we want it atomic.
+
+        // Let's construct the full new state and dispatch SET_STATE for now, 
+        // assuming no race conditions in this single-user local sim.
+
+        const newState: WarehouseState = {
+            ...state,
+            entities: newEntities,
+            purchaseOrders: newPOs
+        };
+
+        dispatch({ type: 'SET_STATE', payload: newState });
+        saveState(newState);
+        logAction('UPDATE', `Received PO ${po.poNumber}`, poId);
+    };
+
+    const markAllocatedDevicesPicked = (deviceIds: string[]) => {
+        if (deviceIds.length === 0) return;
+        const updates = deviceIds.map(id => {
+            const entity = state.entities[id];
+            if (entity && entity.type === 'Device' && entity.deviceAttributes?.allocatedToOrder) {
+                return {
+                    id,
+                    updates: {
+                        deviceAttributes: {
+                            ...entity.deviceAttributes,
+                            allocatedToOrder: {
+                                ...entity.deviceAttributes.allocatedToOrder,
+                                pickedAt: new Date().toISOString()
+                            }
+                        }
+                    }
+                };
+            }
+            return null;
+        }).filter(Boolean) as { id: string, updates: Partial<WarehouseEntity> }[];
+
+        if (updates.length > 0) {
+            const action: Action = { type: 'BATCH_UPDATE_ENTITIES', payload: { updates } };
+            const newState = warehouseReducer(state, action);
+            dispatch(action);
+            saveState(newState);
+            logAction('PICK', `Picked ${updates.length} devices`, updates[0].id);
+        }
+    };
+
+    const claimUnserializedPromise = (orderId: string, sku: string, imei: string) => {
+        // Find a device allocated to this order AND matching SKU AND NOT picked yet
+        const candidate = Object.values(state.entities).find(e =>
+            e.type === 'Device' &&
+            e.deviceAttributes?.sku === sku &&
+            e.deviceAttributes?.allocatedToOrder?.orderId === orderId &&
+            !e.deviceAttributes?.allocatedToOrder?.pickedAt &&
+            (!e.deviceAttributes?.imei || e.deviceAttributes?.imei === '') // Unserialized ideally
+        );
+
+        if (!candidate) {
+            console.error('No unpicked allocated device found for UNSERIALIZED claim', sku);
+            // Fallback? Or fail.
+            // If strict logic: fail.
+            // But user might be scanning a new device to FULFILL a promise. 
+            // If the promise was "Item A", and we generated "Item A (No IMEI)", now we give it an IMEI.
+            return false;
+        }
+
+        // Update the candidate
+        const updates = {
+            deviceAttributes: {
+                ...candidate.deviceAttributes,
+                imei: imei, // Assign the scanned IMEI
+                allocatedToOrder: {
+                    ...candidate.deviceAttributes!.allocatedToOrder!,
+                    pickedAt: new Date().toISOString()
+                }
+            },
+            label: generateDeviceLabel({ ...candidate.deviceAttributes, imei } as any) // Update label with new IMEI
+        };
+
+        updateEntity(candidate.id, updates);
+        logAction('PICK', `Claimed promised device with IMEI ${imei}`, candidate.id);
+        return true;
+    };
+
     return (
         <WarehouseContext.Provider value={{
             state,
@@ -1298,7 +1704,18 @@ export function WarehouseProvider({ children }: { children: React.ReactNode }) {
             deleteOrder,
             removeOrderLine,
             setWarehouseState,
-            shipOrder
+            shipOrder,
+            addVendor,
+            updateVendor,
+            deleteVendor,
+            addItems,
+            addPurchaseOrder,
+            updatePurchaseOrder,
+            deletePurchaseOrder,
+            getNextPoNumber,
+            finishPurchaseOrder,
+            markAllocatedDevicesPicked,
+            claimUnserializedPromise
         }}>
             {children}
         </WarehouseContext.Provider>
