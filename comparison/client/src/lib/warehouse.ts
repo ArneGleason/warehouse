@@ -130,6 +130,8 @@ export interface WarehouseState {
     processingDestBinId?: string | null;
     processingExceptionBinId?: string | null;
     receivingBinId?: string | null;
+    sellableDepartmentId?: string | null;
+    pickPackDepartmentId?: string | null;
 
     // Orders
     orders: Record<string, Order>;
@@ -215,6 +217,10 @@ export interface Order {
     updatedAt: string;
     shippedAt?: string;
     trackingNumber?: string;
+    stagingLocation?: {
+        bin: string;
+        boxes: string[];
+    };
 }
 
 export const ENTITY_CONFIG: Record<EntityType, { allowedParents: (EntityType | null)[], icon: string }> = {

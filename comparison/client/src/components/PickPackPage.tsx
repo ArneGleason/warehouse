@@ -11,14 +11,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { PickPackSettingsDialog } from '@/components/PickPackSettingsDialog';
 
 // --- Picking Logic ---
 
 function PickingView({ orderId, onBack }: { orderId: string, onBack: () => void }) {
-    const { state, updateEntity, updateOrder, markAllocatedDevicesPicked, claimUnserializedPromise } = useWarehouse();
+    const { state, updateEntity, updateOrder, markAllocatedDevicesPicked, claimUnserializedPromise, moveEntities } = useWarehouse();
     const order = state.orders[orderId];
     const [imeiInput, setImeiInput] = useState('');
     const [lastScannedId, setLastScannedId] = useState<string | null>(null);
+
+    // Staging Location State
+    const [stagingBin, setStagingBin] = useState(order?.stagingLocation?.bin || '');
+    const [stagingBoxes, setStagingBoxes] = useState(order?.stagingLocation?.boxes.join(', ') || '');
 
     // 1. Identification
     const neededSkus = new Set(order?.lines.map(l => l.skuId));
@@ -35,7 +40,27 @@ function PickingView({ orderId, onBack }: { orderId: string, onBack: () => void 
     // "Reserved" means Allocated but NOT Picked
     const reservedDevices = allAllocatedDevices.filter(d => !d.deviceAttributes?.allocatedToOrder?.pickedAt);
 
-    // 3. Progress
+    // 3. Staging Bins Config
+    const pickPackDeptId = state.pickPackDepartmentId;
+    const availableBins = Object.values(state.entities)
+        .filter(e => {
+            if (e.type !== 'Bin') return false;
+            // Check if descendant of pickPackDeptId
+            // Simple approach: Check parentId chain? Or assuming bins are direct children?
+            // Warehouse Context doesn't expose hierarchy helpers directly here.
+            // Assumption: Bins are typically direct children of Zones or Departments.
+            // Recursive check is safer but costly.
+            // Let's assume standard 3-tier: Dept -> Bin OR Dept -> Zone -> Bin.
+            // Let's verify 'parentId' matches dept OR parent's parent matches dept.
+            if (!pickPackDeptId) return false;
+            if (e.parentId === pickPackDeptId) return true;
+            const parent = state.entities[e.parentId || ''];
+            if (parent && parent.parentId === pickPackDeptId) return true;
+            return false;
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+    // 4. Progress
     const progressBySku = order?.lines.reduce((acc, line) => {
         const count = pickedDevices.filter(d => d.deviceAttributes?.sku === line.skuId).length;
         acc[line.skuId] = count;
@@ -249,11 +274,43 @@ function PickingView({ orderId, onBack }: { orderId: string, onBack: () => void 
     };
 
     const handleMarkReadyToPack = () => {
+        // Validation: Check Staging Location
+        if (!stagingBin.trim()) {
+            alert("Please enter a Staging Bin location.");
+            return;
+        }
+        if (!stagingBoxes.trim()) {
+            alert("Please enter at least one Box label.");
+            return;
+        }
+
         const isComplete = order.lines.every(l => (progressBySku?.[l.skuId] || 0) >= l.qty);
         if (!isComplete) {
             if (!confirm("Order is not fully picked. Mark ready to pack anyway?")) return;
         }
-        updateOrder(orderId, { status: 'Ready for Packing' });
+
+        // Save Staging Location and Update Status
+        updateOrder(orderId, {
+            status: 'Ready for Packing',
+            stagingLocation: {
+                bin: stagingBin.trim(),
+                boxes: stagingBoxes.split(',').map(s => s.trim()).filter(Boolean)
+            }
+        });
+
+        // MOVE LOGIC: Move all Picked Devices to the Staging Bin
+        // 1. Find the Bin ID matching logic (we stored label in state, need ID to move)
+        const targetBin = availableBins.find(b => b.label === stagingBin);
+        if (targetBin) {
+            const pickedIds = pickedDevices.map(d => d.id);
+            if (pickedIds.length > 0) {
+                moveEntities(pickedIds, targetBin.id);
+            }
+        } else {
+            console.error("Could not find bin ID for label:", stagingBin);
+            // Should we alert? The user selected from dropdown so it SHOULD exist.
+        }
+
         onBack();
     };
 
@@ -327,6 +384,59 @@ function PickingView({ orderId, onBack }: { orderId: string, onBack: () => void 
                                     })}
                             </SelectContent>
                         </Select>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Staging Location Input */}
+            <Card className="bg-blue-50/50 border-blue-100 dark:bg-blue-950/10 dark:border-blue-900">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2 text-blue-800 dark:text-blue-300">
+                        <Icons.MapPin className="h-4 w-4" />
+                        Staging Location (Required)
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Caption */}
+                    <div className="text-sm text-blue-600 dark:text-blue-400 bg-blue-100/50 dark:bg-blue-900/20 p-2 rounded">
+                        <span className="font-semibold">Note:</span> Setting the staging location bin is required. All picked devices will be automatically moved to this bin when you mark the order as "Ready to Pack".
+                    </div>
+
+                    <div className="flex gap-4">
+                        <div className="flex-1 max-w-xs space-y-2">
+                            <Label htmlFor="staging-bin">Bin Location</Label>
+                            {state.pickPackDepartmentId ? (
+                                <Select value={stagingBin} onValueChange={setStagingBin}>
+                                    <SelectTrigger id="staging-bin" className="bg-white dark:bg-slate-950">
+                                        <SelectValue placeholder="Select Staging Bin..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {availableBins.map(bin => (
+                                            <SelectItem key={bin.id} value={bin.label}>
+                                                {bin.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Input
+                                    id="staging-bin"
+                                    placeholder="Config Msg: Set Pick & Pack Dept"
+                                    disabled
+                                    className="bg-white dark:bg-slate-950"
+                                />
+                            )}
+                        </div>
+                        <div className="flex-1 space-y-2">
+                            <Label htmlFor="staging-boxes">Box Labels (Comma separated)</Label>
+                            <Input
+                                id="staging-boxes"
+                                placeholder="e.g. BOX-101, BOX-102"
+                                value={stagingBoxes}
+                                onChange={(e) => setStagingBoxes(e.target.value)}
+                                className="bg-white dark:bg-slate-950"
+                            />
+                        </div>
                     </div>
                 </CardContent>
             </Card>
@@ -474,6 +584,7 @@ function PickingView({ orderId, onBack }: { orderId: string, onBack: () => void 
 export function PickPackPage() {
     const { state } = useWarehouse();
     const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     // Filter for "Ready for Picking" orders
     const pickingOrders = Object.values(state.orders)
@@ -489,15 +600,42 @@ export function PickPackPage() {
     }
 
     return (
-        <div className="h-full flex flex-col p-6 gap-6 bg-slate-50 dark:bg-slate-950/50">
-            <div>
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                    <PackageCheck className="h-6 w-6" />
-                    Pick & Pack
-                </h1>
-                <p className="text-muted-foreground">Orders ready for picking and fulfillment</p>
+        <div className="h-full flex flex-col p-6 bg-slate-50 dark:bg-slate-950/50">
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Pick & Pack</h1>
+                    <p className="text-muted-foreground mt-1">
+                        Manage picking, packing, and shipping of orders.
+                    </p>
+                </div>
+                <Button variant="outline" size="icon" onClick={() => setIsSettingsOpen(true)}>
+                    <Icons.Settings className="h-4 w-4" />
+                </Button>
             </div>
 
+            <PickPackSettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+            {/* Config Summary Badge */}
+            <div className="flex gap-2 mb-4">
+                {state.sellableDepartmentId ? (
+                    <Badge variant="outline" className="text-xs bg-white">
+                        Source: {state.entities[state.sellableDepartmentId]?.label}
+                    </Badge>
+                ) : (
+                    <Badge variant="destructive" className="text-xs">
+                        Config Required: Set Sellable Dept
+                    </Badge>
+                )}
+                {state.pickPackDepartmentId ? (
+                    <Badge variant="outline" className="text-xs bg-white">
+                        Staging: {state.entities[state.pickPackDepartmentId]?.label}
+                    </Badge>
+                ) : (
+                    <Badge variant="destructive" className="text-xs">
+                        Config Required: Set Staging Dept
+                    </Badge>
+                )}
+            </div>
             <div className="grid gap-4">
                 {pickingOrders.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg bg-muted/10">

@@ -20,7 +20,7 @@ type Action =
     | { type: 'BATCH_MOVE'; payload: { moves: { id: string; targetId: string | null }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
     | { type: 'ADD_BULK_ENTITIES'; payload: { entities: { entity: WarehouseEntity; parentId: string }[] } }
-    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null } }
+    | { type: 'UPDATE_CONFIG'; payload: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null; receivingBinId?: string | null; sellableDepartmentId?: string | null; pickPackDepartmentId?: string | null; } }
     | { type: 'BOX_ENTITIES'; payload: { boxId: string; boxLabel: string; boxBarcode: string; parentId: string | null; deviceIds: string[] } }
     | { type: 'UNBOX_ENTITIES'; payload: { boxId: string; parentId: string | null; deleteBox: boolean } }
     | { type: 'BATCH_UPDATE_ENTITIES'; payload: { updates: { id: string; updates: Partial<WarehouseEntity> }[] } }
@@ -54,6 +54,8 @@ const initialState: WarehouseState = {
     processingDestBinId: null,
     processingExceptionBinId: null,
     receivingBinId: null,
+    sellableDepartmentId: null,
+    pickPackDepartmentId: null,
     items: {
         'IPHONE-13-128-MID': {
             sku: 'IPHONE-13-128-MID', category: 'Phone', manufacturer: 'Apple', model: 'iPhone 13', modelNumber: 'A2633',
@@ -809,7 +811,7 @@ interface WarehouseContextType {
     undo: () => void;
     canUndo: boolean;
     isConnected: boolean;
-    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null; receivingBinId?: string | null }) => void;
+    updateConfig: (config: { maxMoveWithoutConfirm?: number; processingSourceBinId?: string | null; processingDestBinId?: string | null; processingExceptionBinId?: string | null; receivingBinId?: string | null; sellableDepartmentId?: string | null; pickPackDepartmentId?: string | null; }) => void;
     boxEntities: (boxId: string, boxLabel: string, boxBarcode: string, parentId: string | null, deviceIds: string[]) => void;
     unboxEntities: (boxId: string, parentId: string | null, deleteBox: boolean) => void;
     updateEntities: (updates: { id: string; updates: Partial<WarehouseEntity> }[]) => void;
